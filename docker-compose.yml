@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sketch-frenzy-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_BACKEND_URL=http://localhost:3001
+      - VITE_SOCKET_URL=http://localhost:3001
+    depends_on:
+      - backend
+    networks:
+      - sketch-frenzy-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sketch-frenzy-backend
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - REDIS_URL=redis://redis:6379
+      - CLIENT_URL=http://localhost:5173
+    depends_on:
+      - redis
+    networks:
+      - sketch-frenzy-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: sketch-frenzy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - sketch-frenzy-network
+
+networks:
+  sketch-frenzy-network:
+    driver: bridge
+
+volumes:
+  redis-data:
