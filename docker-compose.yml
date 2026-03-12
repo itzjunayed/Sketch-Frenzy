@@ -1,24 +1,4 @@
-version: "3.9"
-
 services:
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: sketch-frenzy-frontend
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      - VITE_BACKEND_URL=http://localhost:3001
-      - VITE_SOCKET_URL=http://localhost:3001
-    depends_on:
-      - backend
-    networks:
-      - sketch-frenzy-network
-
   backend:
     build:
       context: ./backend
@@ -38,6 +18,36 @@ services:
       - redis
     networks:
       - sketch-frenzy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sketch-frenzy-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_BACKEND_URL=http://backend:3001
+      - VITE_SOCKET_URL=http://backend:3001
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - sketch-frenzy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5173"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   redis:
     image: redis:7-alpine
@@ -49,6 +59,11 @@ services:
     command: redis-server --appendonly yes
     networks:
       - sketch-frenzy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   sketch-frenzy-network:
