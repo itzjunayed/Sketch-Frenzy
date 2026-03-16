@@ -2,6 +2,12 @@ import { useEffect } from "react";
 import { useSocket } from "@/hooks/useSocket";
 import { DrawingCanvas } from "@/components/DrawingCanvas";
 import { useDrawingStore } from "@/store/drawingStore";
+import Home from "./pages/home/page";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+} from "react-router-dom";
 
 export function App() {
   const socket = useSocket();
@@ -61,9 +67,12 @@ export function App() {
   }, [socket, setConnectedClients, setIsConnected, setSocketId]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <DrawingCanvas socket={socket} />
-    </div>
+      <Router>
+      <Routes>
+      <Route path="/" element={<Home/>}/>
+      <Route path="/canvas" element={<DrawingCanvas socket={socket} />}/>
+      </Routes>
+      </Router>
   );
 }
 
