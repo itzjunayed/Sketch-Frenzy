@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { DrawingTool, Player, ChatMessage, GamePhase } from "@/types/drawing";
+import type { DrawingTool, Player, ChatMessage, GamePhase, ScoreDelta } from "@/types/drawing";
 
 export const COLORS = [
   "#000000", "#3d3d3d", "#7f7f7f", "#ffffff",
@@ -10,23 +10,24 @@ export const COLORS = [
 ];
 
 export interface DrawingStateStore {
-  // Drawing tools
+  // ── Drawing tools ──────────────────────────────────────────────────────────
   tool: DrawingTool;
   color: string;
   brushSize: number;
   eraserSize: number;
 
-  // Connection
+  // ── Connection ─────────────────────────────────────────────────────────────
   connectedClients: number;
   isConnected: boolean;
   socketId: string | null;
   username: string;
 
-  // Game
+  // ── Game core ──────────────────────────────────────────────────────────────
   players: Player[];
   chatMessages: ChatMessage[];
   wordHint: string;
-  currentWord: string | null;  // only set for the drawer
+  wordLengths: number[];          // e.g. [4, 4] for "Fire Ball"
+  currentWord: string | null;     // only set for the active drawer
   timeLeft: number;
   isDrawer: boolean;
   currentDrawerId: string | null;
@@ -36,7 +37,15 @@ export interface DrawingStateStore {
   maxRounds: number;
   hasGuessedCorrectly: boolean;
 
-  // Setters
+  // ── Word selection (drawer only) ───────────────────────────────────────────
+  wordChoices: string[];          // options presented to the drawer
+  isSelectingWord: boolean;       // true while drawer hasn't picked yet
+  wordSelectTimeLeft: number;     // countdown shown on the selector
+
+  // ── Round-end overlay ──────────────────────────────────────────────────────
+  roundScoreDelta: ScoreDelta[];  // points gained this round per player
+
+  // ── Setters ────────────────────────────────────────────────────────────────
   setTool: (tool: DrawingTool) => void;
   setColor: (color: string) => void;
   setBrushSize: (size: number) => void;
@@ -49,6 +58,7 @@ export interface DrawingStateStore {
   addChatMessage: (msg: ChatMessage) => void;
   clearChatMessages: () => void;
   setWordHint: (hint: string) => void;
+  setWordLengths: (lengths: number[]) => void;
   setCurrentWord: (word: string | null) => void;
   setTimeLeft: (time: number) => void;
   setIsDrawer: (isDrawer: boolean) => void;
@@ -58,6 +68,10 @@ export interface DrawingStateStore {
   setRoundNumber: (round: number) => void;
   setMaxRounds: (max: number) => void;
   setHasGuessedCorrectly: (has: boolean) => void;
+  setWordChoices: (choices: string[]) => void;
+  setIsSelectingWord: (val: boolean) => void;
+  setWordSelectTimeLeft: (t: number) => void;
+  setRoundScoreDelta: (deltas: ScoreDelta[]) => void;
 }
 
 export const useDrawingStore = create<DrawingStateStore>((set) => ({
@@ -73,6 +87,7 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   players: [],
   chatMessages: [],
   wordHint: "",
+  wordLengths: [],
   currentWord: null,
   timeLeft: 0,
   isDrawer: false,
@@ -82,6 +97,12 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   roundNumber: 0,
   maxRounds: 3,
   hasGuessedCorrectly: false,
+
+  wordChoices: [],
+  isSelectingWord: false,
+  wordSelectTimeLeft: 0,
+
+  roundScoreDelta: [],
 
   setTool: (tool) => set({ tool }),
   setColor: (color) => set({ color }),
@@ -93,11 +114,10 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   setUsername: (name) => set({ username: name }),
   setPlayers: (players) => set({ players }),
   addChatMessage: (msg) =>
-    set((state) => ({
-      chatMessages: [...state.chatMessages.slice(-199), msg],
-    })),
+    set((state) => ({ chatMessages: [...state.chatMessages.slice(-199), msg] })),
   clearChatMessages: () => set({ chatMessages: [] }),
   setWordHint: (hint) => set({ wordHint: hint }),
+  setWordLengths: (lengths) => set({ wordLengths: lengths }),
   setCurrentWord: (word) => set({ currentWord: word }),
   setTimeLeft: (time) => set({ timeLeft: time }),
   setIsDrawer: (isDrawer) => set({ isDrawer }),
@@ -107,4 +127,8 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   setRoundNumber: (round) => set({ roundNumber: round }),
   setMaxRounds: (max) => set({ maxRounds: max }),
   setHasGuessedCorrectly: (has) => set({ hasGuessedCorrectly: has }),
+  setWordChoices: (choices) => set({ wordChoices: choices }),
+  setIsSelectingWord: (val) => set({ isSelectingWord: val }),
+  setWordSelectTimeLeft: (t) => set({ wordSelectTimeLeft: t }),
+  setRoundScoreDelta: (deltas) => set({ roundScoreDelta: deltas }),
 }));

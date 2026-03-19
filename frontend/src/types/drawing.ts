@@ -1,5 +1,12 @@
 export type DrawingTool = "brush" | "eraser" | "fill";
-export type GamePhase = "waiting" | "starting" | "drawing" | "roundEnd" | "gameEnd";
+
+export type GamePhase =
+  | "waiting"
+  | "starting"
+  | "selectingWord"   // drawer is picking a word
+  | "drawing"
+  | "roundEnd"
+  | "gameEnd";
 
 export interface DrawingState {
   color: string;
@@ -43,4 +50,11 @@ export interface ChatMessage {
   text: string;
   type: "chat" | "system" | "correct";
   timestamp: number;
+}
+
+/** Points gained by each player in the most recent round */
+export interface ScoreDelta {
+  id: string;
+  username: string;
+  delta: number;
 }

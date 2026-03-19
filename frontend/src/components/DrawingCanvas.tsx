@@ -2,14 +2,17 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Socket } from "socket.io-client";
 import {
   Paintbrush, Droplet, RotateCcw, Trash2,
-  Send, Eraser, ChevronRight,
+  Send, Eraser,
 } from "lucide-react";
 import { useDrawingStore, COLORS } from "@/store/drawingStore";
+import { GAME_CONFIG } from "@/config/gameConfig";
 import type { DrawingTool } from "@/types/drawing";
 
 interface DrawingCanvasProps {
   socket: Socket | null;
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const GAME_STYLES = `
   @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap');
@@ -59,6 +62,18 @@ const GAME_STYLES = `
                  2px -1px 0 var(--ink), -1px 2px 0 var(--ink);
     white-space: nowrap;
     letter-spacing: 1px;
+    flex-shrink: 0;
+  }
+
+  /* Center zone: timer + word wrap in a row */
+  .gf-topbar-center {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-width: 0;
   }
 
   .gf-timer-wrap {
@@ -70,6 +85,7 @@ const GAME_STYLES = `
     border-radius: 10px;
     padding: 4px 14px;
     box-shadow: 3px 3px 0 var(--ink);
+    flex-shrink: 0;
   }
 
   .gf-timer-num {
@@ -89,16 +105,25 @@ const GAME_STYLES = `
     to   { transform: scale(1.15); }
   }
 
+  .gf-timer-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
   .gf-word-wrap {
     flex: 1;
     display: flex;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
     gap: 8px;
     background: var(--cream);
     border: 2.5px solid var(--ink);
     border-radius: 10px;
-    padding: 4px 16px;
+    padding: 6px 16px;
     box-shadow: 3px 3px 0 var(--ink);
     min-width: 0;
   }
@@ -110,14 +135,23 @@ const GAME_STYLES = `
     letter-spacing: 2px;
     color: #888;
     white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .gf-word-hint {
     font-family: 'Fredoka One', cursive;
     font-size: 1.2rem;
-    letter-spacing: 6px;
+    letter-spacing: 5px;
     color: var(--ink);
-    word-break: break-all;
+    white-space: pre;
+  }
+
+  .gf-word-char-count {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #bbb;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .gf-word-drawing {
@@ -137,11 +171,13 @@ const GAME_STYLES = `
     padding: 2px 10px;
     box-shadow: 2px 2px 0 var(--ink);
     white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .gf-conn {
     display: flex; align-items: center; gap: 5px;
     font-size: 0.75rem; font-weight: 700; white-space: nowrap;
+    flex-shrink: 0;
   }
   .gf-conn-dot {
     width: 8px; height: 8px; border-radius: 50%;
@@ -266,7 +302,7 @@ const GAME_STYLES = `
   .gf-canvas-overlay {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(255,253,244,.85);
+    background: rgba(255,253,244,.88);
     border-radius: 2px;
     z-index: 10;
   }
@@ -277,6 +313,208 @@ const GAME_STYLES = `
     color: var(--ink);
     text-align: center;
     padding: 20px;
+  }
+
+  /* ── Word selector overlay ── */
+  .gf-word-select-overlay {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(255,253,244,.95);
+    border-radius: 2px;
+    gap: 14px;
+    padding: 20px;
+  }
+
+  .gf-word-select-title {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.6rem;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 var(--ink), -1px -1px 0 var(--ink);
+    text-align: center;
+  }
+
+  .gf-word-select-sub {
+    font-size: 0.85rem; font-weight: 700;
+    color: #666; text-align: center; margin-top: -8px;
+  }
+
+  .gf-word-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .gf-word-choice-btn {
+    width: 100%;
+    padding: 12px 16px;
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.15rem;
+    letter-spacing: 1px;
+    background: var(--cream);
+    color: var(--ink);
+    border: 2.5px solid var(--ink);
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 var(--ink);
+    transition: box-shadow .12s, transform .12s, background .12s;
+    outline: none;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .gf-word-choice-btn:hover  { background: #f5edcf; transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--ink); }
+  .gf-word-choice-btn:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--ink); }
+
+  .gf-word-choice-label {
+    flex: 1;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .gf-word-choice-len {
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: var(--ink);
+    color: white;
+    border-radius: 4px;
+    padding: 2px 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-family: 'Nunito', sans-serif;
+  }
+
+  .gf-select-timer {
+    font-family: 'Fredoka One', cursive;
+    font-size: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .gf-select-timer.urgent { color: var(--red); animation: timerPulse .5s ease-in-out infinite alternate; }
+  .gf-select-timer.ok     { color: var(--gold-dark); }
+  .gf-select-timer.good   { color: var(--green-dark); }
+
+  .gf-select-hint {
+    font-size: 0.75rem; font-weight: 700; color: #999;
+    text-align: center; font-style: italic;
+  }
+
+  /* ── Round-end score overlay ── */
+  .gf-round-end-overlay {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(255,253,244,.96);
+    border-radius: 2px;
+    gap: 10px;
+    padding: 20px;
+    animation: overlayIn .3s cubic-bezier(.34,1.56,.64,1) both;
+  }
+
+  @keyframes overlayIn {
+    from { opacity:0; transform: scale(.95); }
+    to   { opacity:1; transform: scale(1); }
+  }
+
+  .gf-round-end-title {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.8rem;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 var(--ink), -1px -1px 0 var(--ink);
+    text-align: center;
+  }
+
+  .gf-round-end-word {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1rem;
+    color: var(--green-dark);
+    background: #d4f5e2;
+    border: 2px solid var(--green);
+    border-radius: 8px;
+    padding: 4px 14px;
+    text-align: center;
+    letter-spacing: 1px;
+  }
+
+  .gf-round-end-scores {
+    width: 100%;
+    max-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .gf-round-end-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: var(--cream);
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+
+  .gf-round-end-rank {
+    font-family: 'Fredoka One', cursive;
+    font-size: 0.9rem;
+    min-width: 20px;
+    text-align: center;
+    color: #888;
+  }
+
+  .gf-round-end-name {
+    flex: 1;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .gf-round-end-total {
+    font-family: 'Fredoka One', cursive;
+    font-size: 0.95rem;
+    color: var(--blue);
+    min-width: 36px;
+    text-align: right;
+  }
+
+  .gf-round-end-delta {
+    font-family: 'Fredoka One', cursive;
+    font-size: 0.85rem;
+    min-width: 44px;
+    text-align: right;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+  .gf-round-end-delta.positive { color: var(--green-dark); background: #d4f5e2; }
+  .gf-round-end-delta.zero     { color: #aaa; }
+
+  .gf-round-end-auto-close {
+    font-size: 0.75rem; font-weight: 700; color: #aaa;
+    display: flex; align-items: center; gap: 4px;
+  }
+
+  .gf-round-end-auto-bar {
+    width: 120px; height: 4px;
+    background: #e0d8c0;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .gf-round-end-auto-fill {
+    height: 100%;
+    background: var(--gold);
+    border-radius: 2px;
+    transition: width 1s linear;
   }
 
   /* ── Toolbar ── */
@@ -377,8 +615,8 @@ const GAME_STYLES = `
     to   { opacity: 1; transform: translateY(0); }
   }
 
-  .gf-msg.chat   { background: var(--cream); border: 1.5px solid #e0d8c0; }
-  .gf-msg.system { background: #f0f0f0; border: 1.5px solid #ccc; color: #555; font-style: italic; text-align: center; }
+  .gf-msg.chat    { background: var(--cream); border: 1.5px solid #e0d8c0; }
+  .gf-msg.system  { background: #f0f0f0; border: 1.5px solid #ccc; color: #555; font-style: italic; text-align: center; }
   .gf-msg.correct { background: #d4f5e2; border: 1.5px solid var(--green); font-weight: 700; text-align: center; }
 
   .gf-msg-author { font-weight: 800; color: var(--blue); margin-right: 4px; }
@@ -408,6 +646,27 @@ const GAME_STYLES = `
   }
   .gf-chat-input:focus { box-shadow: 3px 3px 0 var(--gold-dark); border-color: var(--gold-dark); }
   .gf-chat-input:disabled { opacity: .5; cursor: not-allowed; }
+
+  .gf-chat-input-row {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .gf-chat-char-count {
+    font-size: 0.65rem;
+    font-weight: 800;
+    color: #bbb;
+    text-align: right;
+    padding-right: 2px;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    transition: color .15s;
+  }
+  .gf-chat-char-count.warn { color: var(--gold-dark); }
+  .gf-chat-char-count.full { color: var(--red); }
 
   .gf-chat-send {
     display: flex; align-items: center; justify-content: center;
@@ -509,28 +768,23 @@ const GAME_STYLES = `
   .gf-username-btn:hover  { background: var(--green-dark); transform: translate(-1px,-1px); box-shadow: 5px 5px 0 var(--ink); }
   .gf-username-btn:active { transform: translate(2px,2px); box-shadow: 2px 2px 0 var(--ink); }
   .gf-username-btn:disabled { opacity: .5; cursor: not-allowed; transform: none !important; }
-
-  /* ── Game end / waiting overlay ── */
-  .gf-phase-overlay {
-    position: absolute; inset: 0; z-index: 20;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    background: rgba(255,253,244,.9);
-    gap: 10px;
-  }
-
-  .gf-phase-title {
-    font-family: 'Fredoka One', cursive;
-    font-size: 2rem; color: var(--gold);
-    text-shadow: 2px 2px 0 var(--ink), -1px -1px 0 var(--ink);
-    text-align: center;
-  }
-
-  .gf-phase-sub {
-    font-size: 1rem; font-weight: 700; color: #555;
-    text-align: center;
-  }
 `;
+
+// ─── Hint helpers ─────────────────────────────────────────────────────────────
+
+/** Total letter count (spaces excluded) from wordLengths array */
+function totalLetters(lengths: number[]): number {
+  return lengths.reduce((sum, n) => sum + n, 0);
+}
+
+/** Human-readable letter count label, e.g. [4,4] → "4 + 4  (8 letters)" */
+function hintCountLabel(lengths: number[]): string {
+  if (lengths.length === 0) return "";
+  const total = totalLetters(lengths);
+  return `${total} letter${total !== 1 ? "s" : ""}`;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function DrawingCanvas({ socket }: DrawingCanvasProps) {
   const canvasRef     = useRef<HTMLCanvasElement>(null);
@@ -538,28 +792,37 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const chatEndRef    = useRef<HTMLDivElement>(null);
 
-  const isDrawingRef  = useRef(false);
-  const lastPointRef  = useRef<{ x: number; y: number } | null>(null);
-  const strokeIdRef   = useRef<string>("");
-  const myStrokeIdsRef= useRef<Set<string>>(new Set());
+  const isDrawingRef   = useRef(false);
+  const lastPointRef   = useRef<{ x: number; y: number } | null>(null);
+  const strokeIdRef    = useRef<string>("");
+  const myStrokeIdsRef = useRef<Set<string>>(new Set());
 
-  const [canUndo,   setCanUndo  ] = useState(false);
-  const [canvasSize,setCanvasSize] = useState(500);
-  const [cursorPos, setCursorPos ] = useState<{ x: number; y: number } | null>(null);
-  const [isOnCanvas,setIsOnCanvas] = useState(false);
-  const [chatInput, setChatInput ] = useState("");
+  const [canUndo,    setCanUndo   ] = useState(false);
+  const [canvasSize, setCanvasSize] = useState(500);
+  const [cursorPos,  setCursorPos ] = useState<{ x: number; y: number } | null>(null);
+  const [isOnCanvas, setIsOnCanvas] = useState(false);
+  const [chatInput,  setChatInput ] = useState("");
   const [localUsername, setLocalUsername] = useState("");
+
+  // Round-end overlay local state
+  const [showRoundEnd,    setShowRoundEnd   ] = useState(false);
+  const [roundEndCountdown, setRoundEndCountdown] = useState<number>(GAME_CONFIG.ROUND_END_OVERLAY_DURATION_S);
+
+  // Word-select local countdown (visual only — backend handles the timeout)
+  const [localSelectTime, setLocalSelectTime] = useState<number>(GAME_CONFIG.WORD_SELECT_TIME);
 
   const {
     color, brushSize, eraserSize, tool, isConnected,
     setTool, setColor, setBrushSize, setEraserSize,
-    players, chatMessages, wordHint, currentWord,
+    players, chatMessages, wordHint, wordLengths, currentWord,
     timeLeft, isDrawer, currentDrawerName, gamePhase,
     roundNumber, maxRounds, hasGuessedCorrectly,
     username, setUsername,
+    wordChoices, isSelectingWord, wordSelectTimeLeft,
+    roundScoreDelta,
   } = useDrawingStore();
 
-  // ── Username setup ─────────────────────────────────────────────────────────
+  // ── Username ────────────────────────────────────────────────────────────────
   const showUsernameOverlay = !username;
 
   const handleJoin = () => {
@@ -570,40 +833,65 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
     if (socket) socket.emit("joinGame", { username: name });
   };
 
-  // Load saved username
   useEffect(() => {
     const saved = localStorage.getItem("sf_username");
-    if (saved) {
-      setUsername(saved);
-    }
+    if (saved) setUsername(saved);
   }, [setUsername]);
 
-  // Emit joinGame when username is set and socket connects
   useEffect(() => {
     if (!socket || !username) return;
-    if (socket.connected) {
-      socket.emit("joinGame", { username });
-    }
+    if (socket.connected) socket.emit("joinGame", { username });
   }, [socket, username]);
 
-  // ── Auto-scroll chat ───────────────────────────────────────────────────────
+  // ── Round-end overlay timer ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (gamePhase !== "roundEnd") {
+      setShowRoundEnd(false);
+      return;
+    }
+    setShowRoundEnd(true);
+    setRoundEndCountdown(GAME_CONFIG.ROUND_END_OVERLAY_DURATION_S);
+
+    const interval = setInterval(() => {
+      setRoundEndCountdown((prev) => {
+        if (prev <= 1) { clearInterval(interval); setShowRoundEnd(false); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [gamePhase]);
+
+  // ── Word-select countdown (local visual timer) ──────────────────────────────
+  useEffect(() => {
+    if (!isSelectingWord) return;
+    setLocalSelectTime(wordSelectTimeLeft || GAME_CONFIG.WORD_SELECT_TIME);
+
+    const interval = setInterval(() => {
+      setLocalSelectTime((prev) => {
+        if (prev <= 1) { clearInterval(interval); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isSelectingWord, wordSelectTimeLeft]);
+
+  // ── Auto-scroll chat ────────────────────────────────────────────────────────
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
 
-  // ── Canvas size from container ─────────────────────────────────────────────
+  // ── Canvas size ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const wrap = canvasWrapRef.current;
     if (!wrap) return;
-
-    const updateSize = () => {
+    const update = () => {
       const { width, height } = wrap.getBoundingClientRect();
-      const size = Math.floor(Math.min(width - 24, height - 24));
-      setCanvasSize(Math.max(size, 200));
+      setCanvasSize(Math.max(Math.floor(Math.min(width - 24, height - 24)), 200));
     };
-
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
+    update();
+    const ro = new ResizeObserver(update);
     ro.observe(wrap);
     return () => ro.disconnect();
   }, []);
@@ -612,11 +900,9 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || canvasSize <= 0) return;
-
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
-    // Preserve content across resize
     let imageData: ImageData | null = null;
     if (contextRef.current && canvas.width > 0 && canvas.height > 0) {
       try { imageData = contextRef.current.getImageData(0, 0, canvas.width, canvas.height); } catch (_) {}
@@ -624,19 +910,17 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
 
     canvas.width  = canvasSize;
     canvas.height = canvasSize;
-    ctx.lineCap  = "round";
-    ctx.lineJoin = "round";
+    ctx.lineCap   = "round";
+    ctx.lineJoin  = "round";
     ctx.fillStyle = "#FFFFFF";
     ctx.fillRect(0, 0, canvasSize, canvasSize);
 
-    if (imageData) {
-      try { ctx.putImageData(imageData, 0, 0); } catch (_) {}
-    }
+    if (imageData) { try { ctx.putImageData(imageData, 0, 0); } catch (_) {} }
 
     contextRef.current = ctx;
   }, [canvasSize]);
 
-  // ── Drawing primitives ─────────────────────────────────────────────────────
+  // ── Drawing primitives ──────────────────────────────────────────────────────
   const paintSegment = useCallback(
     (from: { x: number; y: number }, to: { x: number; y: number },
      type: string, segColor: string, segSize: number) => {
@@ -662,31 +946,25 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
 
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const { data, width, height } = imageData;
-
       const sx = Math.round(startX), sy = Math.round(startY);
       if (sx < 0 || sx >= width || sy < 0 || sy >= height) return;
 
       const pi = (sy * width + sx) * 4;
       const [tR, tG, tB, tA] = [data[pi], data[pi+1], data[pi+2], data[pi+3]];
-      const fR = parseInt(fillColor.slice(1,3),16);
-      const fG = parseInt(fillColor.slice(3,5),16);
-      const fB = parseInt(fillColor.slice(5,7),16);
-
+      const fR = parseInt(fillColor.slice(1,3), 16);
+      const fG = parseInt(fillColor.slice(3,5), 16);
+      const fB = parseInt(fillColor.slice(5,7), 16);
       if (tR===fR && tG===fG && tB===fB && tA===255) return;
 
       const visited = new Uint8Array(width * height);
       const queue: number[] = [sx + sy * width];
-
       while (queue.length) {
         const flat = queue.pop()!;
         if (visited[flat]) continue;
         visited[flat] = 1;
         const x = flat % width, y = (flat/width)|0, idx = flat*4;
-
         if (data[idx]!==tR || data[idx+1]!==tG || data[idx+2]!==tB || data[idx+3]!==tA) continue;
-
         data[idx]=fR; data[idx+1]=fG; data[idx+2]=fB; data[idx+3]=255;
-
         if (x+1 < width)  queue.push(flat+1);
         if (x-1 >= 0)     queue.push(flat-1);
         if (y+1 < height) queue.push(flat+width);
@@ -696,31 +974,27 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
     }, []
   );
 
-  const applyDrawEvent = useCallback(
-    (event: any) => {
-      if (event.type === "stroke" || event.type === "erase") {
-        paintSegment(
-          { x: event.startX, y: event.startY },
-          { x: event.endX,   y: event.endY   },
-          event.type, event.color ?? "#000000", event.size ?? 5
-        );
-      } else if (event.type === "fill") {
-        floodFill(event.x, event.y, event.color ?? "#000000");
-      }
-    }, [paintSegment, floodFill]
-  );
+  const applyDrawEvent = useCallback((event: any) => {
+    if (event.type === "stroke" || event.type === "erase") {
+      paintSegment(
+        { x: event.startX, y: event.startY },
+        { x: event.endX,   y: event.endY   },
+        event.type, event.color ?? "#000000", event.size ?? 5
+      );
+    } else if (event.type === "fill") {
+      floodFill(event.x, event.y, event.color ?? "#000000");
+    }
+  }, [paintSegment, floodFill]);
 
-  const replayHistory = useCallback(
-    (history: any[]) => {
-      const canvas = canvasRef.current, ctx = contextRef.current;
-      if (!canvas || !ctx) return;
-      ctx.fillStyle = "#FFFFFF";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      history.forEach((ev) => applyDrawEvent(ev));
-    }, [applyDrawEvent]
-  );
+  const replayHistory = useCallback((history: any[]) => {
+    const canvas = canvasRef.current, ctx = contextRef.current;
+    if (!canvas || !ctx) return;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    history.forEach((ev) => applyDrawEvent(ev));
+  }, [applyDrawEvent]);
 
-  // ── Socket: drawing events ─────────────────────────────────────────────────
+  // ── Socket drawing events ───────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
@@ -758,7 +1032,7 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
     };
   }, [socket, applyDrawEvent, replayHistory]);
 
-  // ── Canvas coordinate helper ───────────────────────────────────────────────
+  // ── Canvas coordinate helpers ───────────────────────────────────────────────
   const getCanvasPoint = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -776,7 +1050,7 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  // ── Mouse handlers ─────────────────────────────────────────────────────────
+  // ── Mouse handlers ──────────────────────────────────────────────────────────
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!socket || !isDrawer) return;
     const pt  = getCanvasPoint(e);
@@ -784,10 +1058,7 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
 
     if (tool === "fill") {
       floodFill(pt.x, pt.y, color);
-      socket.emit("draw", {
-        type: "fill", x: pt.x, y: pt.y, color,
-        timestamp: Date.now(), clientId: socket.id, strokeId: sid,
-      });
+      socket.emit("draw", { type: "fill", x: pt.x, y: pt.y, color, timestamp: Date.now(), clientId: socket.id, strokeId: sid });
       myStrokeIdsRef.current.add(sid);
       setCanUndo(true);
       return;
@@ -805,14 +1076,12 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
     setCursorPos(css);
 
     if (!isDrawingRef.current || !socket || !lastPointRef.current || !isDrawer) return;
-
-    const pt       = getCanvasPoint(e);
-    const isErase  = tool === "eraser";
-    const segColor = isErase ? "#FFFFFF" : color;
-    const segSize  = isErase ? eraserSize : brushSize;
+    const pt      = getCanvasPoint(e);
+    const isErase = tool === "eraser";
+    const segColor= isErase ? "#FFFFFF" : color;
+    const segSize = isErase ? eraserSize : brushSize;
 
     paintSegment(lastPointRef.current, pt, isErase ? "erase" : "stroke", segColor, segSize);
-
     socket.emit("draw", {
       type: isErase ? "erase" : "stroke",
       startX: lastPointRef.current.x, startY: lastPointRef.current.y,
@@ -821,7 +1090,6 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
       timestamp: Date.now(), clientId: socket.id,
       strokeId: strokeIdRef.current,
     });
-
     lastPointRef.current = pt;
   };
 
@@ -839,36 +1107,45 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
   const handleMouseUp    = endStroke;
   const handleMouseLeave = () => { setIsOnCanvas(false); setCursorPos(null); endStroke(); };
 
-  // ── Toolbar actions ────────────────────────────────────────────────────────
+  // ── Toolbar actions ─────────────────────────────────────────────────────────
   const handleUndo = () => {
     if (!socket || !canUndo) return;
     socket.emit("undo", { clientId: socket.id });
     setCanUndo(false);
   };
+  const handleClear = () => { if (!socket) return; socket.emit("clear"); };
 
-  const handleClear = () => {
+  // ── Word selection ──────────────────────────────────────────────────────────
+  const handleSelectWord = (index: number) => {
     if (!socket) return;
-    socket.emit("clear");
+    socket.emit("selectWord", { choiceIndex: index });
   };
 
-  // ── Chat / Guess ───────────────────────────────────────────────────────────
+  // ── Chat / Guess ────────────────────────────────────────────────────────────
   const sendChatMessage = () => {
     const text = chatInput.trim();
     if (!text || !socket || hasGuessedCorrectly) return;
     socket.emit("guess", { text, clientId: socket.id });
     setChatInput("");
   };
-
   const handleChatKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") sendChatMessage();
   };
 
-  // ── Timer color ────────────────────────────────────────────────────────────
-  const timerClass = timeLeft <= 10 ? "urgent" : timeLeft <= 20 ? "ok" : "good";
-  const cursorSize = tool === "eraser" ? eraserSize : brushSize;
-  const canDraw    = isDrawer && gamePhase === "drawing";
+  // ── Derived display values ──────────────────────────────────────────────────
+  const timerClass  = timeLeft <= 10 ? "urgent" : timeLeft <= 20 ? "ok" : "good";
+  const selectClass = localSelectTime <= 5 ? "urgent" : localSelectTime <= 9 ? "ok" : "good";
+  const cursorSize  = tool === "eraser" ? eraserSize : brushSize;
+  const canDraw     = isDrawer && gamePhase === "drawing";
 
-  // ── Rendering ──────────────────────────────────────────────────────────────
+  // Sort players by score for the round-end overlay
+  const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+  const deltaMap      = new Map(roundScoreDelta.map((d) => [d.id, d.delta]));
+
+  // Progress bar fill % for round-end auto-close
+  const roundEndProgress = (roundEndCountdown / GAME_CONFIG.ROUND_END_OVERLAY_DURATION_S) * 100;
+
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: GAME_STYLES }} />
@@ -903,59 +1180,65 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
 
         {/* ── Top bar ── */}
         <div className="gf-topbar">
+
           <div className="gf-logo">✏️ Sketchy Frenzy</div>
 
-          {/* Timer */}
-          {gamePhase === "drawing" && (
-            <div className="gf-timer-wrap">
-              <span style={{ fontSize: 16 }}>⏱</span>
-              <span className={`gf-timer-num ${timerClass}`}>{timeLeft}</span>
-              <span style={{ fontSize: 12, color: "#888", fontWeight: 700 }}>sec</span>
-            </div>
-          )}
-
-          {/* Word hint / drawing word */}
-          <div className="gf-word-wrap">
-            {gamePhase === "drawing" ? (
-              isDrawer && currentWord ? (
-                <>
-                  <span className="gf-word-label">🎨 Draw:</span>
-                  <span className="gf-word-drawing">{currentWord.toUpperCase()}</span>
-                </>
-              ) : (
-                <>
-                  <span className="gf-word-label">Guess:</span>
-                  <span className="gf-word-hint">{wordHint || "..."}</span>
-                </>
-              )
-            ) : gamePhase === "roundEnd" ? (
-              <>
-                <span className="gf-word-label">Word was:</span>
-                <span className="gf-word-drawing">{wordHint}</span>
-              </>
-            ) : (
-              <span className="gf-word-label">
-                {gamePhase === "waiting" ? "⏳ Waiting for players..." :
-                 gamePhase === "starting" ? "🎮 Game starting..." :
-                 gamePhase === "gameEnd"  ? "🏆 Game Over!" : ""}
-              </span>
+          {/* Center: timer + word hint side by side */}
+          <div className="gf-topbar-center">
+            {gamePhase === "drawing" && (
+              <div className="gf-timer-wrap">
+                <span style={{ fontSize: 16 }}>⏱</span>
+                <span className={`gf-timer-num ${timerClass}`}>{timeLeft}</span>
+                <span className="gf-timer-label">sec</span>
+              </div>
             )}
+
+            <div className="gf-word-wrap">
+              {gamePhase === "drawing" ? (
+                isDrawer && currentWord ? (
+                  <>
+                    <span className="gf-word-label">🎨 Draw:</span>
+                    <span className="gf-word-drawing">{currentWord.toUpperCase()}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="gf-word-label">Guess:</span>
+                    <span className="gf-word-hint">{wordHint || "..."}</span>
+                    {wordLengths.length > 0 && (
+                      <span className="gf-word-char-count">({hintCountLabel(wordLengths)})</span>
+                    )}
+                  </>
+                )
+              ) : gamePhase === "roundEnd" ? (
+                <>
+                  <span className="gf-word-label">Word was:</span>
+                  <span className="gf-word-drawing">{wordHint}</span>
+                </>
+              ) : gamePhase === "selectingWord" ? (
+                <span className="gf-word-label">
+                  {isDrawer ? "⏳ Choose your word…" : `⏳ ${currentDrawerName} is choosing…`}
+                </span>
+              ) : (
+                <span className="gf-word-label">
+                  {gamePhase === "waiting"  ? "⏳ Waiting for players…" :
+                   gamePhase === "starting" ? "🎮 Game starting…" :
+                   gamePhase === "gameEnd"  ? "🏆 Game Over!" : ""}
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Round badge */}
           {roundNumber > 0 && (
-            <div className="gf-round-badge">
-              Round {roundNumber}/{maxRounds}
-            </div>
+            <div className="gf-round-badge">Round {roundNumber}/{maxRounds}</div>
           )}
 
-          {/* Connection */}
           <div className="gf-conn">
             <div className={`gf-conn-dot ${isConnected ? "on" : "off"}`} />
             <span style={{ color: isConnected ? "var(--green-dark)" : "var(--red)" }}>
               {isConnected ? "Connected" : "Offline"}
             </span>
           </div>
+
         </div>
 
         {/* ── Players panel ── */}
@@ -967,23 +1250,19 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
                 No players yet...
               </div>
             ) : (
-              [...players]
-                .sort((a, b) => b.score - a.score)
-                .map((p, i) => (
-                  <div
-                    key={p.id}
-                    className={`gf-player-row ${p.isDrawing ? "drawing" : ""} ${p.hasGuessed && !p.isDrawing ? "guessed" : ""}`}
-                  >
-                    <div className="gf-player-avatar">
-                      {p.username[0]?.toUpperCase() ?? "?"}
-                    </div>
-                    <div className="gf-player-name">{p.username}</div>
-                    <div className="gf-player-score">{p.score}</div>
-                    <div className="gf-player-status">
-                      {p.isDrawing ? "🎨" : p.hasGuessed ? "✅" : i === 0 && gamePhase === "drawing" ? "👑" : ""}
-                    </div>
+              sortedPlayers.map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`gf-player-row ${p.isDrawing ? "drawing" : ""} ${p.hasGuessed && !p.isDrawing ? "guessed" : ""}`}
+                >
+                  <div className="gf-player-avatar">{p.username[0]?.toUpperCase() ?? "?"}</div>
+                  <div className="gf-player-name">{p.username}</div>
+                  <div className="gf-player-score">{p.score}</div>
+                  <div className="gf-player-status">
+                    {p.isDrawing ? "🎨" : p.hasGuessed ? "✅" : i === 0 && gamePhase === "drawing" ? "👑" : ""}
                   </div>
-                ))
+                </div>
+              ))
             )}
           </div>
         </div>
@@ -991,10 +1270,8 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
         {/* ── Canvas panel ── */}
         <div className="gf-canvas-panel">
           <div className="gf-canvas-wrap" ref={canvasWrapRef}>
-            <div
-              className="gf-canvas-container"
-              style={{ width: canvasSize, height: canvasSize }}
-            >
+            <div className="gf-canvas-container" style={{ width: canvasSize, height: canvasSize }}>
+
               <canvas
                 ref={canvasRef}
                 onMouseDown={handleMouseDown}
@@ -1010,7 +1287,7 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
                 }}
               />
 
-              {/* Cursor overlay */}
+              {/* Custom cursor */}
               {canDraw && isOnCanvas && cursorPos && (
                 tool === "fill" ? (
                   <div className="pointer-events-none" style={{ position: "absolute", left: cursorPos.x, top: cursorPos.y }}>
@@ -1031,27 +1308,89 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
                 )
               )}
 
-              {/* Phase overlay on canvas */}
-              {gamePhase === "waiting" && (
+              {/* ── Word selector overlay (drawer only) ── */}
+              {isSelectingWord && isDrawer && (
+                <div className="gf-word-select-overlay">
+                  <div className="gf-word-select-title">Choose your word!</div>
+                  <div className="gf-word-select-sub">Others will try to guess what you draw</div>
+
+                  <div className="gf-word-choices">
+                    {wordChoices.map((word, idx) => (
+                      <button
+                        key={idx}
+                        className="gf-word-choice-btn"
+                        onClick={() => handleSelectWord(idx)}
+                      >
+                        <span className="gf-word-choice-label">{word.toUpperCase()}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className={`gf-select-timer ${selectClass}`}>
+                    ⏱ {localSelectTime}s
+                  </div>
+                  <div className="gf-select-hint">
+                    Auto-picks randomly if time runs out
+                  </div>
+                </div>
+              )}
+
+              {/* ── Waiting for word overlay (non-drawers) ── */}
+              {isSelectingWord && !isDrawer && (
                 <div className="gf-canvas-overlay">
                   <div className="gf-overlay-text">
-                    ⏳<br/>Waiting for<br/>more players...
+                    🤔<br/>
+                    {currentDrawerName || "The drawer"}<br/>
+                    is choosing a word…
                   </div>
+                </div>
+              )}
+
+              {/* ── Round-end score overlay ── */}
+              {showRoundEnd && (
+                <div className="gf-round-end-overlay">
+                  <div className="gf-round-end-title">⏰ Round Over!</div>
+                  <div className="gf-round-end-word">The word was: {wordHint}</div>
+
+                  <div className="gf-round-end-scores">
+                    {sortedPlayers.map((p, i) => {
+                      const delta = deltaMap.get(p.id) ?? 0;
+                      return (
+                        <div key={p.id} className="gf-round-end-row">
+                          <div className="gf-round-end-rank">
+                            {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i+1}.`}
+                          </div>
+                          <div className="gf-round-end-name">{p.username}</div>
+                          <div className="gf-round-end-total">{p.score}</div>
+                          <div className={`gf-round-end-delta ${delta > 0 ? "positive" : "zero"}`}>
+                            {delta > 0 ? `+${delta}` : "—"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="gf-round-end-auto-close">
+                    <span>Next round in {roundEndCountdown}s</span>
+                    <div className="gf-round-end-auto-bar">
+                      <div
+                        className="gf-round-end-auto-fill"
+                        style={{ width: `${roundEndProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Phase overlays (waiting / starting / game end) ── */}
+              {gamePhase === "waiting" && !isSelectingWord && !showRoundEnd && (
+                <div className="gf-canvas-overlay">
+                  <div className="gf-overlay-text">⏳<br/>Waiting for<br/>more players…</div>
                 </div>
               )}
               {gamePhase === "starting" && (
                 <div className="gf-canvas-overlay">
                   <div className="gf-overlay-text">🎮<br/>Game starting!</div>
-                </div>
-              )}
-              {gamePhase === "roundEnd" && (
-                <div className="gf-canvas-overlay">
-                  <div className="gf-overlay-text">
-                    ⏰ Round over!<br/>
-                    <span style={{ fontSize:"1rem", color:"var(--green-dark)" }}>
-                      "{wordHint}"
-                    </span>
-                  </div>
                 </div>
               )}
               {gamePhase === "gameEnd" && (
@@ -1062,42 +1401,24 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
                   </div>
                 </div>
               )}
+
             </div>
           </div>
 
-          {/* ── Drawing toolbar (only drawer sees it enabled) ── */}
+          {/* ── Drawing toolbar ── */}
           <div className="gf-toolbar">
-            {/* Tool buttons */}
-            <button
-              className={`gf-tool-btn ${tool==="brush" ? "active" : ""}`}
-              onClick={() => setTool("brush")}
-              disabled={!canDraw}
-              title="Brush"
-            >
+            <button className={`gf-tool-btn ${tool==="brush" ? "active" : ""}`} onClick={() => setTool("brush")} disabled={!canDraw} title="Brush">
               <Paintbrush size={15} /> Brush
             </button>
-
-            <button
-              className={`gf-tool-btn ${tool==="fill" ? "active" : ""}`}
-              onClick={() => setTool("fill")}
-              disabled={!canDraw}
-              title="Fill"
-            >
+            <button className={`gf-tool-btn ${tool==="fill" ? "active" : ""}`} onClick={() => setTool("fill")} disabled={!canDraw} title="Fill">
               <Droplet size={15} /> Fill
             </button>
-
-            <button
-              className={`gf-tool-btn ${tool==="eraser" ? "active" : ""}`}
-              onClick={() => setTool("eraser")}
-              disabled={!canDraw}
-              title="Eraser"
-            >
+            <button className={`gf-tool-btn ${tool==="eraser" ? "active" : ""}`} onClick={() => setTool("eraser")} disabled={!canDraw} title="Eraser">
               <Eraser size={15} /> Eraser
             </button>
 
             <div className="gf-divider-v" />
 
-            {/* Size slider */}
             {tool !== "fill" && (
               <div className="gf-size-wrap">
                 <span>{tool === "brush" ? "Size" : "Eraser"}:</span>
@@ -1118,7 +1439,6 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
 
             <div className="gf-divider-v" />
 
-            {/* Color swatches */}
             <div className="gf-color-grid">
               {COLORS.map((c) => (
                 <button
@@ -1127,32 +1447,17 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
                   style={{ background: c }}
                   title={c}
                   disabled={!canDraw}
-                  onClick={() => {
-                    setColor(c);
-                    if (tool !== "brush" && tool !== "fill") setTool("brush");
-                  }}
+                  onClick={() => { setColor(c); if (tool !== "brush" && tool !== "fill") setTool("brush"); }}
                 />
               ))}
             </div>
 
             <div className="gf-divider-v" />
 
-            {/* Undo / Clear */}
-            <button
-              className="gf-tool-btn"
-              onClick={handleUndo}
-              disabled={!canDraw || !canUndo}
-              title="Undo"
-            >
+            <button className="gf-tool-btn" onClick={handleUndo} disabled={!canDraw || !canUndo} title="Undo">
               <RotateCcw size={15} /> Undo
             </button>
-
-            <button
-              className="gf-tool-btn danger"
-              onClick={handleClear}
-              disabled={!canDraw}
-              title="Clear canvas"
-            >
+            <button className="gf-tool-btn danger" onClick={handleClear} disabled={!canDraw} title="Clear canvas">
               <Trash2 size={15} /> Clear
             </button>
           </div>
@@ -1185,20 +1490,30 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
           </div>
 
           <div className="gf-chat-input-wrap">
-            <input
-              className="gf-chat-input"
-              placeholder={
-                isDrawer ? "You're drawing... 🎨" :
-                hasGuessedCorrectly ? "You guessed it! ✅" :
-                gamePhase !== "drawing" ? "Game not active..." :
-                "Type your guess..."
-              }
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={handleChatKey}
-              disabled={isDrawer || hasGuessedCorrectly || gamePhase !== "drawing"}
-              maxLength={80}
-            />
+            <div className="gf-chat-input-row">
+              <input
+                className="gf-chat-input"
+                placeholder={
+                  isDrawer ? "You're drawing... 🎨" :
+                  hasGuessedCorrectly ? "You guessed it! ✅" :
+                  gamePhase !== "drawing" ? "Game not active..." :
+                  "Type your guess..."
+                }
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={handleChatKey}
+                disabled={isDrawer || hasGuessedCorrectly || gamePhase !== "drawing"}
+                maxLength={80}
+              />
+              {!isDrawer && !hasGuessedCorrectly && gamePhase === "drawing" && (
+                <span className={`gf-chat-char-count ${
+                  chatInput.replace(/ /g, "").length >= 80 ? "full" :
+                  chatInput.replace(/ /g, "").length >= 60 ? "warn" : ""
+                }`}>
+                  {chatInput.replace(/ /g, "").length} chars
+                </span>
+              )}
+            </div>
             <button
               className="gf-chat-send"
               onClick={sendChatMessage}

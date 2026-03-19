@@ -4,7 +4,7 @@ import {
   Routes,
   Route,
 } from "react-router-dom";
-import Canvas from "./pages/canvas";
+import Canvas from "./pages/canvas/index";
 
 export function App() {
   return (

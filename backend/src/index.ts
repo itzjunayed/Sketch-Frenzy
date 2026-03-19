@@ -2,54 +2,74 @@ import express from "express";
 import http    from "http";
 import { Server } from "socket.io";
 import cors   from "cors";
+import { GAME_CONFIG } from "./config/gameConfig";
+import { WORDS } from "./data/words";
 
 const PORT       = process.env.PORT       || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 const NODE_ENV   = process.env.NODE_ENV   || "development";
 
-// ─── Word Dictionary ──────────────────────────────────────────────────────────
-// Words are base64-encoded so they are not plaintext in source.
-// The server decodes once at startup; the plain word is NEVER sent to
-// non-drawer clients — guessers only receive the underscore hint.
-const WORD_DICT_B64 =
-  "WyJhcHBsZSIsImJhbmFuYSIsImNhdCIsImRvZyIsImhvdXNlIiwidHJlZSIsInN1biIsIm1v" +
-  "b24iLCJzdGFyIiwiZmlzaCIsImJpcmQiLCJjYXIiLCJib29rIiwicGhvbmUiLCJjbG9jayIs" +
-  "ImNoYWlyIiwidGFibGUiLCJkb29yIiwid2luZG93IiwiZmxvd2VyIiwiY2xvdWQiLCJyYWlu" +
-  "Iiwic25vdyIsImZpcmUiLCJ3YXRlciIsImJvYXQiLCJ0cmFpbiIsInBsYW5lIiwicGl6emEi" +
-  "LCJjYWtlIiwiaGF0Iiwic2hvZSIsImJhbGwiLCJraXRlIiwiZnJvZyIsImxpb24iLCJ0aWdl" +
-  "ciIsImJlYXIiLCJyYWJiaXQiLCJkdWNrIiwiZWxlcGhhbnQiLCJndWl0YXIiLCJwaWFubyIs" +
-  "ImRydW0iLCJjcm93biIsImZsYWciLCJoZWFydCIsImRpYW1vbmQiLCJyYWluYm93Iiwidm9s" +
-  "Y2FubyIsImNhc3RsZSIsInJvYm90Iiwicm9ja2V0IiwicGVuZ3VpbiIsImJ1dHRlcmZseSIs" +
-  "ImNhY3R1cyIsInR1cnRsZSIsIm9jdG9wdXMiLCJkcmFnb24iLCJ1bmljb3JuIiwid2l6YXJk" +
-  "IiwicGlyYXRlIiwia25pZ2h0IiwibmluamEiLCJhc3Ryb25hdXQiLCJtZXJtYWlkIiwic2Fu" +
-  "ZHdpY2giLCJ1bWJyZWxsYSIsImNhbWVyYSIsInRlbGVzY29wZSIsImJpY3ljbGUiLCJoZWxp" +
-  "Y29wdGVyIiwic3VibWFyaW5lIiwibXVzaHJvb20iLCJwaW5lYXBwbGUiLCJicm9jY29saSIs" +
-  "InRvcm5hZG8iLCJsaWdodGhvdXNlIiwiY29tcGFzcyIsInRyZWFzdXJlIiwibGFudGVybiIs" +
-  "ImhhbW1lciIsInNjaXNzb3JzIiwiYmFja3BhY2siLCJub3RlYm9vayIsInN1bmZsb3dlciIs" +
-  "InN0cmF3YmVycnkiLCJ3YXRlcm1lbG9uIiwicG9wY29ybiIsImhvdGRvZyIsImN1cGNha2Ui" +
-  "LCJkb251dCIsInByZXR6ZWwiLCJzcGFnaGV0dGkiLCJ0YWNvIiwic3VzaGkiLCJpZ2xvbyIs" +
-  "InB5cmFtaWQiLCJ2b2xjYW5vIiwiY2FjdHVzIiwiY2FueW9uIiwiaXNsYW5kIiwiZm9yZXN0" +
-  "IiwiYmVhY2giLCJtb3VudGFpbiIsInJpdmVyIiwiYnJpZGdlIl0=";
-
-const WORDS: string[] = JSON.parse(
-  Buffer.from(WORD_DICT_B64, "base64").toString("utf-8")
-);
-
 console.log(`✓ Word dictionary loaded: ${WORDS.length} words`);
 
-function pickWord(): string {
-  return WORDS[Math.floor(Math.random() * WORDS.length)];
+// ─── Word helpers ──────────────────────────────────────────────────────────────
+
+function pickWords(count: number, exclude: Set<string>): string[] {
+  const pool = WORDS.filter((w) => !exclude.has(w));
+  const source = pool.length >= count ? pool : WORDS; // fallback if pool exhausted
+  const picked: string[] = [];
+  const used = new Set<string>();
+  let attempts = 0;
+  while (picked.length < count && attempts < count * 10) {
+    const w = source[Math.floor(Math.random() * source.length)];
+    if (!used.has(w)) { picked.push(w); used.add(w); }
+    attempts++;
+  }
+  return picked;
 }
 
-/** Build the underscore hint shown to guessers: "apple" → "_ _ _ _ _" */
-function buildHint(word: string): string {
-  return word
-    .split("")
-    .map((c) => (c === " " ? "  " : "_"))
-    .join(" ");
+/**
+ * Build the underscore hint shown to guessers.
+ * "Fire Ball" → "_ _ _ _   _ _ _ _"
+ * Each space between words becomes a visual triple-space gap.
+ * revealedIndices contains global char indices (spaces excluded) to reveal.
+ */
+function buildHint(word: string, revealedIndices: Set<number> = new Set()): string {
+  const wordParts = word.split(" ");
+  let globalIdx = 0;
+  return wordParts
+    .map((part) => {
+      const partHint = part
+        .split("")
+        .map((c) => {
+          const revealed = revealedIndices.has(globalIdx);
+          globalIdx++;
+          return revealed ? c : "_";
+        })
+        .join(" ");
+      globalIdx++; // account for the space between words
+      return partHint;
+    })
+    .join("   "); // triple space visually separates word groups
+}
+
+/** Returns all non-space letter indices (0-based, space chars skipped) */
+function letterIndices(word: string): number[] {
+  const indices: number[] = [];
+  let idx = 0;
+  for (const c of word) {
+    if (c !== " ") indices.push(idx);
+    idx++;
+  }
+  return indices;
+}
+
+/** Word lengths per word-part, e.g. "Fire Ball" → [4,4] */
+function wordLengths(word: string): number[] {
+  return word.split(" ").map((p) => p.length);
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
 interface ServerPlayer {
   id: string;
   username: string;
@@ -58,25 +78,39 @@ interface ServerPlayer {
   joinedAt: number;
 }
 
-type GamePhase = "waiting" | "starting" | "drawing" | "roundEnd" | "gameEnd";
+export interface ScoreDelta {
+  id: string;
+  username: string;
+  delta: number;
+}
+
+type GamePhase = "waiting" | "starting" | "selectingWord" | "drawing" | "roundEnd" | "gameEnd";
 
 interface GameState {
   phase: GamePhase;
-  drawOrder: string[];          // socket IDs
+  drawOrder: string[];
   drawerIndex: number;
   currentWord: string | null;
+  wordChoices: string[];          // current set offered to drawer
   wordHint: string;
+  wordLengths: number[];
+  revealedIndices: Set<number>;   // char positions revealed as hints so far
+  hintsGiven: number;
   timeLeft: number;
+  wordSelectTimeLeft: number;
   round: number;
   maxRounds: number;
   roundStartTime: number;
+  scoreAtRoundStart: Map<string, number>;
   timerInterval: ReturnType<typeof setInterval> | null;
+  wordSelectTimeout: ReturnType<typeof setTimeout> | null;
   startTimeout: ReturnType<typeof setTimeout> | null;
   roundEndTimeout: ReturnType<typeof setTimeout> | null;
   usedWords: Set<string>;
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
+
 const players = new Map<string, ServerPlayer>();
 let drawHistory: any[] = [];
 
@@ -85,33 +119,41 @@ const game: GameState = {
   drawOrder: [],
   drawerIndex: 0,
   currentWord: null,
+  wordChoices: [],
   wordHint: "",
-  timeLeft: 60,
+  wordLengths: [],
+  revealedIndices: new Set(),
+  hintsGiven: 0,
+  timeLeft: GAME_CONFIG.ROUND_TIME,
+  wordSelectTimeLeft: GAME_CONFIG.WORD_SELECT_TIME,
   round: 0,
-  maxRounds: 3,
+  maxRounds: GAME_CONFIG.MAX_ROUNDS,
   roundStartTime: 0,
+  scoreAtRoundStart: new Map(),
   timerInterval: null,
+  wordSelectTimeout: null,
   startTimeout: null,
   roundEndTimeout: null,
   usedWords: new Set(),
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function playerList() {
-  const arr = Array.from(players.values()).map((p) => ({
+  return Array.from(players.values()).map((p) => ({
     id: p.id,
     username: p.username,
     score: p.score,
     hasGuessed: p.hasGuessed,
     isDrawing: game.drawOrder[game.drawerIndex] === p.id,
   }));
-  return arr;
 }
 
 function clearTimers() {
-  if (game.timerInterval)   { clearInterval(game.timerInterval);  game.timerInterval   = null; }
-  if (game.startTimeout)    { clearTimeout(game.startTimeout);    game.startTimeout    = null; }
-  if (game.roundEndTimeout) { clearTimeout(game.roundEndTimeout); game.roundEndTimeout = null; }
+  if (game.timerInterval)     { clearInterval(game.timerInterval);    game.timerInterval    = null; }
+  if (game.wordSelectTimeout) { clearTimeout(game.wordSelectTimeout); game.wordSelectTimeout = null; }
+  if (game.startTimeout)      { clearTimeout(game.startTimeout);      game.startTimeout     = null; }
+  if (game.roundEndTimeout)   { clearTimeout(game.roundEndTimeout);   game.roundEndTimeout  = null; }
 }
 
 function allNonDrawersGuessed(): boolean {
@@ -123,7 +165,16 @@ function allNonDrawersGuessed(): boolean {
   return players.size > 1;
 }
 
+function computeScoreDeltas(): ScoreDelta[] {
+  return Array.from(players.values()).map((p) => ({
+    id: p.id,
+    username: p.username,
+    delta: p.score - (game.scoreAtRoundStart.get(p.id) ?? p.score),
+  }));
+}
+
 // ─── Express / Socket.IO ──────────────────────────────────────────────────────
+
 const app = express();
 app.use(cors({ origin: CLIENT_URL }));
 app.use(express.json());
@@ -139,38 +190,34 @@ function broadcastPlayerList() {
 
 function startCountdown() {
   if (game.phase !== "waiting") return;
-  if (players.size < 2) {
-    io.emit("waiting", { message: "⏳ Need at least 2 players to start." });
+  if (players.size < GAME_CONFIG.MIN_PLAYERS) {
+    io.emit("waiting", { message: `⏳ Need at least ${GAME_CONFIG.MIN_PLAYERS} players to start.` });
     return;
   }
-
   game.phase = "starting";
   io.emit("gamePhase", { phase: "starting", maxRounds: game.maxRounds });
-
-  game.startTimeout = setTimeout(() => startRound(), 3000);
+  game.startTimeout = setTimeout(() => startRound(), GAME_CONFIG.COUNTDOWN_DELAY_MS);
 }
 
+/** Phase 1: pick word choices and send to drawer */
 function startRound() {
-  if (players.size < 2) {
+  if (players.size < GAME_CONFIG.MIN_PLAYERS) {
     game.phase = "waiting";
     io.emit("gamePhase", { phase: "waiting" });
     io.emit("waiting", { message: "⏳ Not enough players. Waiting..." });
     return;
   }
 
-  // Increment round or end game
+  // Advance round counter when all drawers in a round have gone
   if (game.drawerIndex >= game.drawOrder.length) {
     game.round++;
     game.drawerIndex = 0;
-    game.drawOrder = Array.from(players.keys()); // refresh order
+    game.drawOrder = Array.from(players.keys());
   }
 
-  if (game.round > game.maxRounds) {
-    endGame();
-    return;
-  }
+  if (game.round > game.maxRounds) { endGame(); return; }
 
-  // If first time starting
+  // First call: initialise round counter
   if (game.round === 0) {
     game.round = 1;
     game.drawOrder = Array.from(players.keys());
@@ -179,41 +226,79 @@ function startRound() {
   const drawerId = game.drawOrder[game.drawerIndex];
   const drawer   = players.get(drawerId);
 
-  if (!drawer) {
-    // Player disconnected, skip
-    game.drawerIndex++;
-    startRound();
-    return;
-  }
+  if (!drawer) { game.drawerIndex++; startRound(); return; }
 
-  // Pick word (avoid repeats)
-  let word = pickWord();
-  let attempts = 0;
-  while (game.usedWords.has(word) && attempts < 20) {
-    word = pickWord();
-    attempts++;
-  }
-  game.usedWords.add(word);
-
-  // Reset guess state
+  // Reset guesser state
   for (const p of players.values()) p.hasGuessed = false;
 
-  game.currentWord  = word;
-  game.wordHint     = buildHint(word);
-  game.phase        = "drawing";
-  game.timeLeft     = 60;
-  game.roundStartTime = Date.now();
+  // Snapshot scores so we can compute round deltas later
+  game.scoreAtRoundStart = new Map(Array.from(players.entries()).map(([id, p]) => [id, p.score]));
+
+  // Pick word choices (avoid recently used)
+  const choices = pickWords(GAME_CONFIG.WORD_CHOICES_COUNT, game.usedWords);
+  game.wordChoices    = choices;
+  game.currentWord    = null;
+  game.revealedIndices = new Set();
+  game.hintsGiven     = 0;
+
+  game.phase = "selectingWord";
+  game.wordSelectTimeLeft = GAME_CONFIG.WORD_SELECT_TIME;
 
   // Clear canvas for new round
   drawHistory = [];
   io.emit("clear");
 
+  // Tell drawer to pick a word
+  const drawerSocket = io.sockets.sockets.get(drawerId);
+  if (drawerSocket) {
+    drawerSocket.emit("wordChoices", {
+      choices,
+      round: game.round,
+      drawerUsername: drawer.username,
+      wordSelectTime: GAME_CONFIG.WORD_SELECT_TIME,
+    });
+  }
+
+  // Tell everyone else to wait
+  io.emit("gamePhase", {
+    phase: "selectingWord",
+    round: game.round,
+    maxRounds: game.maxRounds,
+    drawerUsername: drawer.username,
+  });
+
+  broadcastPlayerList();
+
+  // Auto-select a random word if drawer doesn't pick in time
+  game.wordSelectTimeout = setTimeout(() => {
+    const randomChoice = choices[Math.floor(Math.random() * choices.length)];
+    beginDrawingPhase(drawerId, randomChoice);
+  }, GAME_CONFIG.WORD_SELECT_TIME * 1000);
+}
+
+/** Phase 2: word has been confirmed — start the actual drawing timer */
+function beginDrawingPhase(drawerId: string, word: string) {
+  clearTimers();
+
+  game.usedWords.add(word);
+  game.currentWord  = word;
+  game.wordHint     = buildHint(word);
+  game.wordLengths  = wordLengths(word);
+  game.phase        = "drawing";
+  game.timeLeft     = GAME_CONFIG.ROUND_TIME;
+  game.roundStartTime = Date.now();
+  game.revealedIndices = new Set();
+  game.hintsGiven   = 0;
+
+  const drawer = players.get(drawerId);
+
   const roundData = {
     round: game.round,
     drawerId,
-    drawerUsername: drawer.username,
-    wordHint: game.wordHint,
-    timeLeft: game.timeLeft,
+    drawerUsername: drawer?.username ?? "",
+    wordHint:    game.wordHint,
+    wordLengths: game.wordLengths,
+    timeLeft:    game.timeLeft,
   };
 
   io.emit("roundStart", roundData);
@@ -221,19 +306,34 @@ function startRound() {
 
   // Send actual word only to the drawer
   const drawerSocket = io.sockets.sockets.get(drawerId);
-  if (drawerSocket) {
-    drawerSocket.emit("yourWord", { word });
+  if (drawerSocket) drawerSocket.emit("yourWord", { word });
+
+  // Hint-reveal thresholds (% of round time remaining when we reveal)
+  // e.g. for 80s: first at 53s left (~2/3 remaining), second at 27s (~1/3)
+  const hintAt: number[] = [];
+  for (let i = 1; i <= GAME_CONFIG.MAX_HINT_REVEALS; i++) {
+    hintAt.push(Math.floor(GAME_CONFIG.ROUND_TIME * (1 - i / (GAME_CONFIG.MAX_HINT_REVEALS + 1))));
   }
 
   // Start countdown timer
-  clearTimers();
   game.timerInterval = setInterval(() => {
     game.timeLeft--;
     io.emit("timerUpdate", { timeLeft: game.timeLeft });
 
-    if (game.timeLeft <= 0) {
-      endRound();
+    // Reveal hint?
+    if (game.hintsGiven < GAME_CONFIG.MAX_HINT_REVEALS && hintAt.includes(game.timeLeft)) {
+      const allLetters  = letterIndices(game.currentWord!);
+      const unrevealed  = allLetters.filter((i) => !game.revealedIndices.has(i));
+      if (unrevealed.length > 0) {
+        const pick = unrevealed[Math.floor(Math.random() * unrevealed.length)];
+        game.revealedIndices.add(pick);
+        game.hintsGiven++;
+        game.wordHint = buildHint(game.currentWord!, game.revealedIndices);
+        io.emit("hintUpdate", { wordHint: game.wordHint });
+      }
     }
+
+    if (game.timeLeft <= 0) endRound();
   }, 1000);
 }
 
@@ -244,7 +344,7 @@ function endRound() {
   game.phase = "roundEnd";
   const word = game.currentWord ?? "";
 
-  // Award drawer points: 20 per correct guesser
+  // Award drawer bonus: 20 pts per correct guesser
   const drawerId = game.drawOrder[game.drawerIndex];
   const drawer   = players.get(drawerId);
   if (drawer) {
@@ -252,22 +352,20 @@ function endRound() {
     drawer.score += correctCount * 20;
   }
 
-  io.emit("roundEnd", { word, players: playerList() });
+  const deltas = computeScoreDeltas();
+
+  io.emit("roundEnd", { word, players: playerList(), scoreDelta: deltas });
   broadcastPlayerList();
 
   game.drawerIndex++;
 
-  // Pause before next round
   game.roundEndTimeout = setTimeout(() => {
-    // Check if all drawers in this round have gone
-    if (game.drawerIndex >= game.drawOrder.length) {
-      if (game.round >= game.maxRounds) {
-        endGame();
-        return;
-      }
+    if (game.drawerIndex >= game.drawOrder.length && game.round >= game.maxRounds) {
+      endGame();
+    } else {
+      startRound();
     }
-    startRound();
-  }, 5000);
+  }, GAME_CONFIG.ROUND_END_PAUSE_MS);
 }
 
 function endGame() {
@@ -282,8 +380,7 @@ function endGame() {
     players: playerList(),
   });
 
-  // Reset game after 10 seconds
-  setTimeout(() => resetGame(), 10000);
+  setTimeout(() => resetGame(), GAME_CONFIG.GAME_RESET_DELAY_MS);
 }
 
 function resetGame() {
@@ -292,48 +389,46 @@ function resetGame() {
   game.drawOrder    = [];
   game.drawerIndex  = 0;
   game.currentWord  = null;
+  game.wordChoices  = [];
   game.wordHint     = "";
-  game.timeLeft     = 60;
+  game.wordLengths  = [];
+  game.revealedIndices = new Set();
+  game.hintsGiven   = 0;
+  game.timeLeft     = GAME_CONFIG.ROUND_TIME;
   game.round        = 0;
   game.roundStartTime = 0;
+  game.scoreAtRoundStart = new Map();
   game.usedWords.clear();
 
-  for (const p of players.values()) {
-    p.score      = 0;
-    p.hasGuessed = false;
-  }
+  for (const p of players.values()) { p.score = 0; p.hasGuessed = false; }
 
   drawHistory = [];
   io.emit("clear");
   io.emit("gamePhase", { phase: "waiting" });
   broadcastPlayerList();
 
-  if (players.size >= 2) startCountdown();
+  if (players.size >= GAME_CONFIG.MIN_PLAYERS) startCountdown();
 }
 
-// ─── Socket.IO connections ────────────────────────────────────────────────────
+// ─── Socket.IO ────────────────────────────────────────────────────────────────
+
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  // Send current state to new joiner
   socket.emit("clientCountUpdate", { count: io.engine.clientsCount });
   io.emit("clientCountUpdate",     { count: io.engine.clientsCount });
 
-  // Replay draw history
+  // Replay draw history for late joiners
   drawHistory.forEach((ev) => socket.emit("draw", ev));
 
-  // ── Join game ──────────────────────────────────────────────────────────────
+  // ── joinGame ───────────────────────────────────────────────────────────────
   socket.on("joinGame", ({ username }: { username: string }) => {
     const safeName = String(username ?? "").trim().slice(0, 20) || "Guest";
 
-    // Update or create player
     if (!players.has(socket.id)) {
       players.set(socket.id, {
-        id: socket.id,
-        username: safeName,
-        score: 0,
-        hasGuessed: false,
-        joinedAt: Date.now(),
+        id: socket.id, username: safeName,
+        score: 0, hasGuessed: false, joinedAt: Date.now(),
       });
     } else {
       players.get(socket.id)!.username = safeName;
@@ -341,41 +436,58 @@ io.on("connection", (socket) => {
 
     broadcastPlayerList();
 
-    // If game is drawing, send current hint and who's drawing
+    // Catch up if game is already in progress
     if (game.phase === "drawing") {
       const drawerId = game.drawOrder[game.drawerIndex];
       const drawer   = players.get(drawerId);
       socket.emit("roundStart", {
-        round: game.round,
-        drawerId,
+        round: game.round, drawerId,
         drawerUsername: drawer?.username ?? "",
         wordHint: game.wordHint,
+        wordLengths: game.wordLengths,
         timeLeft: game.timeLeft,
+      });
+    } else if (game.phase === "selectingWord") {
+      const drawerId = game.drawOrder[game.drawerIndex];
+      const drawer   = players.get(drawerId);
+      socket.emit("gamePhase", {
+        phase: "selectingWord",
+        round: game.round,
+        maxRounds: game.maxRounds,
+        drawerUsername: drawer?.username ?? "",
       });
     }
 
-    io.emit("waiting", { message: `👋 ${safeName} joined!` });
-    io.emit("gamePhase", { phase: game.phase, maxRounds: game.maxRounds });
+    io.emit("waiting",    { message: `👋 ${safeName} joined!` });
+    io.emit("gamePhase",  { phase: game.phase, maxRounds: game.maxRounds });
 
-    // Start game if enough players
-    if (game.phase === "waiting" && players.size >= 2) {
+    if (game.phase === "waiting" && players.size >= GAME_CONFIG.MIN_PLAYERS) {
       startCountdown();
     }
   });
 
-  // ── Draw ───────────────────────────────────────────────────────────────────
-  socket.on("draw", (data) => {
-    // Reject draw events from non-drawers
-    if (game.phase === "drawing" && game.drawOrder[game.drawerIndex] !== socket.id) return;
+  // ── selectWord (drawer picks from the offered choices) ─────────────────────
+  socket.on("selectWord", ({ choiceIndex }: { choiceIndex: number }) => {
+    if (game.phase !== "selectingWord") return;
+    if (game.drawOrder[game.drawerIndex] !== socket.id) return;
 
+    const word = game.wordChoices[choiceIndex];
+    if (!word) return;
+
+    clearTimers(); // cancel auto-select timeout
+    beginDrawingPhase(socket.id, word);
+  });
+
+  // ── draw ───────────────────────────────────────────────────────────────────
+  socket.on("draw", (data) => {
+    if (game.phase === "drawing" && game.drawOrder[game.drawerIndex] !== socket.id) return;
     drawHistory.push(data);
     io.emit("draw", data);
   });
 
-  // ── Undo ───────────────────────────────────────────────────────────────────
+  // ── undo ───────────────────────────────────────────────────────────────────
   socket.on("undo", ({ clientId }: { clientId: string }) => {
     let targetStrokeId: string | null = null;
-
     for (let i = drawHistory.length - 1; i >= 0; i--) {
       const ev = drawHistory[i];
       if (ev.clientId !== clientId) continue;
@@ -384,35 +496,25 @@ io.on("connection", (socket) => {
       io.emit("fullRedraw", { history: drawHistory });
       return;
     }
-
-    if (!targetStrokeId) {
-      socket.emit("fullRedraw", { history: drawHistory });
-      return;
-    }
-
+    if (!targetStrokeId) { socket.emit("fullRedraw", { history: drawHistory }); return; }
     drawHistory = drawHistory.filter((ev) => ev.strokeId !== targetStrokeId);
     io.emit("fullRedraw", { history: drawHistory });
   });
 
-  // ── Clear ──────────────────────────────────────────────────────────────────
+  // ── clear ──────────────────────────────────────────────────────────────────
   socket.on("clear", () => {
     if (game.phase === "drawing" && game.drawOrder[game.drawerIndex] !== socket.id) return;
     drawHistory = [];
     io.emit("clear");
   });
 
-  // ── Guess / Chat ───────────────────────────────────────────────────────────
+  // ── guess / chat ───────────────────────────────────────────────────────────
   socket.on("guess", ({ text }: { text: string }) => {
     const player = players.get(socket.id);
     if (!player) return;
-
     const safeTxt = String(text ?? "").trim().slice(0, 80);
     if (!safeTxt) return;
-
-    // Drawer can't guess
     if (game.drawOrder[game.drawerIndex] === socket.id) return;
-
-    // Already guessed
     if (player.hasGuessed) return;
 
     const isCorrect =
@@ -421,63 +523,46 @@ io.on("connection", (socket) => {
       safeTxt.toLowerCase() === game.currentWord.toLowerCase();
 
     if (isCorrect) {
-      // Calculate score — faster guess = more points
       const elapsed = (Date.now() - game.roundStartTime) / 1000;
       const points  = Math.max(50, Math.round(100 - elapsed * 0.7));
+      player.score     += points;
+      player.hasGuessed = true;
 
-      player.score      += points;
-      player.hasGuessed  = true;
-
-      // Notify EVERYONE of the correct guess (but not the text itself)
-      io.emit("correctGuess", {
-        playerId: socket.id,
-        username: player.username,
-        points,
-      });
-
+      io.emit("correctGuess", { playerId: socket.id, username: player.username, points });
       broadcastPlayerList();
 
-      // If all non-drawers guessed, end round early
-      if (allNonDrawersGuessed()) {
-        endRound();
-      }
+      if (allNonDrawersGuessed()) endRound();
     } else {
-      // Regular chat message — broadcast to all
-      const msg = {
-        id:        `msg-${socket.id}-${Date.now()}`,
-        playerId:  socket.id,
-        username:  player.username,
-        text:      safeTxt,
-        type:      "chat" as const,
-        timestamp: Date.now(),
-      };
-      io.emit("newChatMessage", msg);
+      io.emit("newChatMessage", {
+        id: `msg-${socket.id}-${Date.now()}`,
+        playerId: socket.id, username: player.username,
+        text: safeTxt, type: "chat" as const, timestamp: Date.now(),
+      });
     }
   });
 
-  // ── Disconnect ─────────────────────────────────────────────────────────────
+  // ── disconnect ─────────────────────────────────────────────────────────────
   socket.on("disconnect", () => {
     const player = players.get(socket.id);
     console.log("User disconnected:", socket.id, player?.username);
-
-    if (player) {
-      io.emit("waiting", { message: `👋 ${player.username} left.` });
-    }
+    if (player) io.emit("waiting", { message: `👋 ${player.username} left.` });
 
     players.delete(socket.id);
     io.emit("clientCountUpdate", { count: io.engine.clientsCount });
     broadcastPlayerList();
 
-    // If the drawer disconnected, skip their turn
-    if (
-      game.phase === "drawing" &&
-      game.drawOrder[game.drawerIndex] === socket.id
-    ) {
+    if (game.phase === "drawing" && game.drawOrder[game.drawerIndex] === socket.id) {
       endRound();
     }
+    if (game.phase === "selectingWord" && game.drawOrder[game.drawerIndex] === socket.id) {
+      // Drawer disconnected during word select — skip to next
+      clearTimers();
+      game.drawerIndex++;
+      startRound();
+    }
 
-    // If fewer than 2 players, pause game
-    if (players.size < 2 && (game.phase === "drawing" || game.phase === "starting")) {
+    if (players.size < GAME_CONFIG.MIN_PLAYERS &&
+        (game.phase === "drawing" || game.phase === "starting" || game.phase === "selectingWord")) {
       clearTimers();
       game.phase = "waiting";
       game.round = 0;
@@ -494,7 +579,8 @@ io.on("connection", (socket) => {
   });
 });
 
-// ─── HTTP endpoints ───────────────────────────────────────────────────────────
+// ─── HTTP ─────────────────────────────────────────────────────────────────────
+
 app.get("/api/status", (_req, res) => {
   res.json({
     server: { name: "Sketch Frenzy Backend", port: PORT, environment: NODE_ENV, status: "running" },
@@ -507,7 +593,7 @@ app.get("/", (_req, res) => res.send("Sketch Frenzy Server Running"));
 
 server.listen(PORT, () => {
   console.log(`\n⚡ Sketch Frenzy Server`);
-  console.log(`├─ Running on: http://localhost:${PORT}`);
+  console.log(`├─ Running on:  http://localhost:${PORT}`);
   console.log(`├─ Frontend URL: ${CLIENT_URL}`);
-  console.log(`└─ Environment: ${NODE_ENV}\n`);
+  console.log(`└─ Environment:  ${NODE_ENV}\n`);
 });
