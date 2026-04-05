@@ -326,7 +326,90 @@ const styles = `
   .input-wrapper { position: relative; }
 `
 
+import { useSocket } from "../../hooks/useSocket";
+import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { ROOM_CONSTRAINTS, createRoom, onRoomCreated, joinRoomByCode } from "../../utils";
+
 const Home = () => {
+  const socket = useSocket();
+  const navigate = useNavigate();
+  const [maxPlayers, setMaxPlayers] = useState(ROOM_CONSTRAINTS.maxPlayers.default);
+  const [rounds, setRounds] = useState(ROOM_CONSTRAINTS.rounds.default);
+  const [roundTime, setRoundTime] = useState(ROOM_CONSTRAINTS.roundTime.default);
+  const [isCreating, setIsCreating] = useState(false);
+  const [roomCode, setRoomCode] = useState<string | null>(null);
+  const [socketReady, setSocketReady] = useState(false);
+  
+  // Join room state
+  const [joinUsername, setJoinUsername] = useState("");
+  const [joinRoomCode, setJoinRoomCode] = useState("");
+  const [isJoining, setIsJoining] = useState(false);
+
+  useEffect(() => {
+    if (!socket) {
+      setSocketReady(false);
+      return;
+    }
+    
+    setSocketReady(true);
+    const cleanup = onRoomCreated(socket, (code: string) => {
+      setRoomCode(code);
+      setIsCreating(false);
+      // Navigate to canvas with room code as param
+      setTimeout(() => navigate(`/canvas?room=${code}`), 500);
+    });
+
+    return cleanup;
+  }, [socket, navigate]);
+
+  const handleCreateRoom = async () => {
+    if (!socket) {
+      alert("Still connecting to server... please wait");
+      return;
+    }
+    
+    setIsCreating(true);
+    const result = await createRoom(socket, {
+      maxPlayers,
+      rounds,
+      roundTime,
+    });
+
+    if (!result.success) {
+      alert("Failed to create room: " + result.error);
+      setIsCreating(false);
+    }
+  };
+
+  const handleJoinRoom = async () => {
+    if (!socket) {
+      alert("Still connecting to server... please wait");
+      return;
+    }
+
+    if (!joinRoomCode.trim()) {
+      alert("Please enter a room code");
+      return;
+    }
+
+    if (!joinUsername.trim()) {
+      alert("Please enter a username");
+      return;
+    }
+
+    setIsJoining(true);
+    const result = await joinRoomByCode(socket, joinRoomCode.toUpperCase(), joinUsername);
+
+    if (result.success) {
+      // Navigate to canvas with room code as param
+      setTimeout(() => navigate(`/canvas?room=${joinRoomCode.toUpperCase()}`), 300);
+    } else {
+      alert("Failed to join room: " + result.error);
+      setIsJoining(false);
+    }
+  };
+
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: styles }} />
@@ -374,7 +457,10 @@ const Home = () => {
                   </label>
                   <input
                     type="number"
-                    min="2" max="12" defaultValue="8"
+                    min={ROOM_CONSTRAINTS.maxPlayers.min}
+                    max={ROOM_CONSTRAINTS.maxPlayers.max}
+                    value={maxPlayers}
+                    onChange={(e) => setMaxPlayers(Number(e.target.value))}
                     className="sketchy-input"
                   />
                 </fieldset>
@@ -385,7 +471,10 @@ const Home = () => {
                   </label>
                   <input
                     type="number"
-                    min="1" max="10" defaultValue="3"
+                    min={ROOM_CONSTRAINTS.rounds.min}
+                    max={ROOM_CONSTRAINTS.rounds.max}
+                    value={rounds}
+                    onChange={(e) => setRounds(Number(e.target.value))}
                     className="sketchy-input"
                   />
                 </fieldset>
@@ -394,30 +483,45 @@ const Home = () => {
               <div className="settings-grid" style={{ marginTop: 10 }}>
                 <fieldset className="form-row" style={{ margin: 0 }}>
                   <label className="form-label">
-                    <span className="form-label-icon">📝</span>Word Length
-                  </label>
-                  <select className="sketchy-input">
-                    <option value="easy">Short</option>
-                    <option value="medium">Medium</option>
-                    <option value="long">Long</option>
-                  </select>
-                </fieldset>
-
-                <fieldset className="form-row" style={{ margin: 0 }}>
-                  <label className="form-label">
                     <span className="form-label-icon">⏱</span>Round Time
                   </label>
-                  <select className="sketchy-input">
-                    <option value="60">60 sec</option>
-                    <option value="90">90 sec</option>
-                    <option value="120">120 sec</option>
+                  <select
+                    value={roundTime}
+                    onChange={(e) => setRoundTime(Number(e.target.value))}
+                    className="sketchy-input"
+                  >
+                    {ROOM_CONSTRAINTS.roundTime.options.map((time) => (
+                      <option key={time} value={time}>
+                        {time} sec
+                      </option>
+                    ))}
                   </select>
                 </fieldset>
               </div>
 
-              <button className="btn-primary" style={{ marginTop: 18 }}>
-                ✨ Create Room
+              <button
+                className="btn-primary"
+                style={{ marginTop: 18 }}
+                onClick={handleCreateRoom}
+                disabled={isCreating || !socketReady}
+              >
+                {isCreating ? "Creating..." : socketReady ? "✨ Create Room" : "🔌 Connecting..."}
               </button>
+              {roomCode && (
+                <div style={{
+                  marginTop: 12,
+                  padding: "12px",
+                  background: "#e8f5e9",
+                  border: "2px solid #3db870",
+                  borderRadius: "8px",
+                  textAlign: "center",
+                  fontWeight: 700,
+                  color: "#1b5e20",
+                }}
+                >
+                  Room Code: <span style={{ fontSize: "1.2rem", letterSpacing: "2px" }}>{roomCode}</span>
+                </div>
+              )}
             </Tabs.Content>
 
             {/* JOIN ROOM */}
@@ -433,6 +537,21 @@ const Home = () => {
                 }}>
                   Got a code? Hop right in! 🎉
                 </p>
+                
+                <fieldset className="form-row">
+                  <label className="form-label">
+                    <span className="form-label-icon">👤</span>Username
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter your name"
+                    maxLength={8}
+                    value={joinUsername}
+                    onChange={(e) => setJoinUsername(e.target.value)}
+                    className="sketchy-input"
+                  />
+                </fieldset>
+
                 <fieldset className="form-row">
                   <label className="form-label">
                     <span className="form-label-icon">🔑</span>Room Code
@@ -441,12 +560,19 @@ const Home = () => {
                     type="text"
                     placeholder="e.g. ABC123"
                     maxLength={8}
+                    value={joinRoomCode}
+                    onChange={(e) => setJoinRoomCode(e.target.value.toUpperCase())}
                     className="sketchy-input room-code-input"
                   />
                 </fieldset>
 
-                <button className="btn-primary" style={{ marginTop: 8 }}>
-                  🚀 Join Room
+                <button 
+                  className="btn-primary" 
+                  style={{ marginTop: 8 }} 
+                  onClick={handleJoinRoom}
+                  disabled={isJoining || !socketReady}
+                >
+                  {isJoining ? "Joining..." : socketReady ? "🚀 Join Room" : "🔌 Connecting..."}
                 </button>
               </div>
             </Tabs.Content>

@@ -4,6 +4,21 @@ import { Server } from "socket.io";
 import cors   from "cors";
 import { GAME_CONFIG } from "./config/gameConfig";
 import { WORDS } from "./data/words";
+import {
+  connectRedis,
+  preCreateRooms,
+  assignRoom,
+  getAvailableRoomsCount,
+  getRoom,
+  addPlayerToRoom,
+  removePlayerFromRoom,
+  updatePlayerActivity,
+  checkIdlePlayersInRoom,
+  startIdleCheckService,
+  autoCreateRoomsIfNeeded,
+  MAX_USERNAME_LENGTH,
+  RoomCreateOptions,
+} from "./service/roomService";
 
 const PORT       = process.env.PORT       || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
@@ -410,6 +425,32 @@ function resetGame() {
   if (players.size >= GAME_CONFIG.MIN_PLAYERS) startCountdown();
 }
 
+// ─── Room Socket Tracking ─────────────────────────────────────────────────────
+
+const socketToRoom = new Map<string, string>(); // socketId -> roomCode
+
+// ─── Idle Check Service ───────────────────────────────────────────────────────
+
+startIdleCheckService(30000, (roomCode, idleSockets, newHostId) => {
+  // Handle idle players
+  for (const socketId of idleSockets) {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit("kicked", { reason: "idle", redirectTo: "/" });
+      socket.disconnect();
+    }
+    socketToRoom.delete(socketId);
+  }
+
+  // Notify room of host transfer if applicable
+  if (newHostId) {
+    io.to(roomCode).emit("hostTransferred", { newHostId });
+  }
+
+  // Broadcast updated room state
+  io.to(roomCode).emit("roomUpdated");
+});
+
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 
 io.on("connection", (socket) => {
@@ -463,6 +504,31 @@ io.on("connection", (socket) => {
 
     if (game.phase === "waiting" && players.size >= GAME_CONFIG.MIN_PLAYERS) {
       startCountdown();
+    }
+  });
+
+  socket.on("createRoom", async (options: RoomCreateOptions, callback?: (result: { success: boolean; roomCode?: string; error?: string }) => void) => {
+    try {
+      // Extract client IP address
+      const clientIP =
+        (socket.handshake.headers["x-forwarded-for"] as string)?.split(",")[0].trim() ||
+        socket.handshake.address ||
+        "unknown";
+
+      const room = await assignRoom(socket.id, clientIP, options);
+      if (!room) {
+        callback?.({ success: false, error: "No available rooms" });
+        return;
+      }
+      
+      // Auto-create new rooms if available count drops below threshold
+      await autoCreateRoomsIfNeeded();
+      
+      callback?.({ success: true, roomCode: room.code });
+      socket.emit("roomCreated", { roomCode: room.code });
+    } catch (error) {
+      console.error("Room assignment failed:", error);
+      callback?.({ success: false, error: String(error) });
     }
   });
 
@@ -574,6 +640,70 @@ io.on("connection", (socket) => {
     }
   });
 
+  // ── joinRoomByCode ────────────────────────────────────────────────────────────
+  socket.on("joinRoomByCode", async ({ roomCode, username }: { roomCode: string; username: string }, callback?: (result: { success: boolean; room?: any; error?: string }) => void) => {
+    try {
+      const room = await getRoom(roomCode);
+      if (!room) {
+        callback?.({ success: false, error: "Room not found" });
+        return;
+      }
+
+      if (room.status === "ended") {
+        callback?.({ success: false, error: "Room has ended" });
+        return;
+      }
+
+      if (room.players.length >= room.maxPlayers) {
+        callback?.({ success: false, error: "Room is full" });
+        return;
+      }
+
+      // Add player to room
+      const safeName = String(username ?? "").trim().slice(0, MAX_USERNAME_LENGTH) || "Guest";
+      const updatedRoom = await addPlayerToRoom(roomCode, socket.id, safeName);
+
+      // Track socket-to-room mapping
+      socketToRoom.set(socket.id, roomCode);
+      socket.join(roomCode);
+
+      callback?.({ success: true, room: updatedRoom });
+      io.to(roomCode).emit("playerJoined", {
+        username: safeName,
+        players: updatedRoom?.players,
+        hostId: updatedRoom?.host,
+      });
+    } catch (error) {
+      console.error("Join room failed:", error);
+      callback?.({ success: false, error: String(error) });
+    }
+  });
+
+  // ── activity ──────────────────────────────────────────────────────────────────
+  socket.on("activity", async () => {
+    const roomCode = socketToRoom.get(socket.id);
+    if (roomCode) {
+      await updatePlayerActivity(roomCode, socket.id);
+    }
+  });
+
+  // ── leaveRoom ─────────────────────────────────────────────────────────────────
+  socket.on("leaveRoom", async () => {
+    const roomCode = socketToRoom.get(socket.id);
+    if (roomCode) {
+      const updatedRoom = await removePlayerFromRoom(roomCode, socket.id);
+      socketToRoom.delete(socket.id);
+      socket.leave(roomCode);
+
+      if (updatedRoom) {
+        io.to(roomCode).emit("playerLeft", {
+          players: updatedRoom.players,
+          hostId: updatedRoom.host,
+        });
+      }
+    }
+  });
+
   socket.on("getClientCount", () => {
     socket.emit("clientCountUpdate", { count: io.engine.clientsCount });
   });
@@ -589,11 +719,40 @@ app.get("/api/status", (_req, res) => {
   });
 });
 
+app.post("/api/rooms", async (req, res) => {
+  try {
+    const clientIP = req.ip || req.socket.remoteAddress || "unknown";
+    const hostId = `http_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const room = await assignRoom(hostId, clientIP, req.body as RoomCreateOptions);
+    if (!room) {
+      return res.status(503).json({ error: "No available rooms" });
+    }
+    
+    // Auto-create new rooms if available count drops below threshold
+    await autoCreateRoomsIfNeeded();
+    
+    res.status(201).json(room);
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
 app.get("/", (_req, res) => res.send("Sketch Frenzy Server Running"));
 
-server.listen(PORT, () => {
+connectRedis().catch((error) => {
+  console.error("Failed to connect to Redis:", error);
+});
+
+server.listen(PORT, async () => {
   console.log(`\n⚡ Sketch Frenzy Server`);
   console.log(`├─ Running on:  http://localhost:${PORT}`);
   console.log(`├─ Frontend URL: ${CLIENT_URL}`);
-  console.log(`└─ Environment:  ${NODE_ENV}\n`);
+  console.log(`└─ Environment:  ${NODE_ENV}`);
+  
+  // Pre-create available rooms
+  await preCreateRooms(100);
+  const availableCount = await getAvailableRoomsCount();
+  console.log(`├─ Available rooms: ${availableCount}`);
+  console.log();
 });
