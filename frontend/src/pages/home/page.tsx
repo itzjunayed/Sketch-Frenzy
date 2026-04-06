@@ -1,4 +1,4 @@
-import { Form, Tabs } from "radix-ui"
+import { Tabs } from "radix-ui"
 import background from "../../assets/bg.png"
 
 // Inline all styles to keep it self-contained
@@ -341,6 +341,9 @@ const Home = () => {
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [socketReady, setSocketReady] = useState(false);
   
+  // Create room username
+  const [createUsername, setCreateUsername] = useState("");
+  
   // Join room state
   const [joinUsername, setJoinUsername] = useState("");
   const [joinRoomCode, setJoinRoomCode] = useState("");
@@ -368,6 +371,11 @@ const Home = () => {
       alert("Still connecting to server... please wait");
       return;
     }
+
+    if (!createUsername.trim()) {
+      alert("Please enter a username");
+      return;
+    }
     
     setIsCreating(true);
     const result = await createRoom(socket, {
@@ -379,6 +387,9 @@ const Home = () => {
     if (!result.success) {
       alert("Failed to create room: " + result.error);
       setIsCreating(false);
+    } else {
+      // Store username for use in canvas
+      localStorage.setItem("playerUsername", createUsername);
     }
   };
 
@@ -402,6 +413,8 @@ const Home = () => {
     const result = await joinRoomByCode(socket, joinRoomCode.toUpperCase(), joinUsername);
 
     if (result.success) {
+      // Store username for use in canvas
+      localStorage.setItem("playerUsername", joinUsername);
       // Navigate to canvas with room code as param
       setTimeout(() => navigate(`/canvas?room=${joinRoomCode.toUpperCase()}`), 300);
     } else {
@@ -421,22 +434,6 @@ const Home = () => {
         <p className="sketchy-subtitle">🖍 Draw • Guess • Win 🏆</p>
 
         <div className="sketchy-card">
-
-          {/* USERNAME */}
-          <Form.Root>
-            <Form.Field name="username">
-              <div className="username-label">Your Name</div>
-              <Form.Control asChild>
-                <input
-                  className="sketchy-input"
-                  type="text"
-                  placeholder="Enter your username..."
-                  required
-                />
-              </Form.Control>
-            </Form.Field>
-          </Form.Root>
-
           {/* TABS */}
           <Tabs.Root defaultValue="create">
             <Tabs.List className="tabs-list">
@@ -450,6 +447,20 @@ const Home = () => {
 
             {/* CREATE ROOM */}
             <Tabs.Content value="create" className="tab-content">
+              <fieldset className="form-row">
+                <label className="form-label">
+                  <span className="form-label-icon">👤</span>Your Username
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter your name"
+                  maxLength={8}
+                  value={createUsername}
+                  onChange={(e) => setCreateUsername(e.target.value)}
+                  className="sketchy-input"
+                />
+              </fieldset>
+
               <div className="settings-grid">
                 <fieldset className="form-row" style={{ margin: 0 }}>
                   <label className="form-label">
