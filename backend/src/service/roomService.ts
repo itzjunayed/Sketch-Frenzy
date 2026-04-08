@@ -33,8 +33,9 @@ export interface RoomCreateOptions {
 export type RoomIdleCheckCallback = (roomCode: string, removedSocketIds: string[], newHostId?: string) => void;
 
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
-const ROOMS_TO_CREATE_THRESHOLD = 50; // Auto-create when available rooms <= this
-const AUTO_CREATE_COUNT = 100; // How many rooms to create
+const TARGET_AVAILABLE_ROOMS = 100; // Always maintain this many available rooms
+const AUTO_CREATE_COUNT = 100; // How many rooms to create in batch
+const CLEANUP_THRESHOLD = 150; // Delete excess rooms if available > this
 
 const ROOM_KEY_PREFIX = "room:";
 const AVAILABLE_ROOMS_KEY = "available_rooms";
@@ -151,17 +152,46 @@ export async function getAvailableRoomsCount(): Promise<number> {
 }
 
 /**
- * Auto-create rooms if available count falls below threshold
+ * Auto-create rooms if available count falls below target
  */
 export async function autoCreateRoomsIfNeeded(): Promise<boolean> {
   const availableCount = await getAvailableRoomsCount();
 
-  if (availableCount <= ROOMS_TO_CREATE_THRESHOLD) {
-    const roomsToCreate = AUTO_CREATE_COUNT;
+  if (availableCount < TARGET_AVAILABLE_ROOMS) {
+    const roomsNeeded = TARGET_AVAILABLE_ROOMS - availableCount;
+    const roomsToCreate = Math.max(roomsNeeded, AUTO_CREATE_COUNT); // Create at least AUTO_CREATE_COUNT
     console.log(`⚠️  Available rooms at ${availableCount}, creating ${roomsToCreate} more...`);
     await preCreateRooms(roomsToCreate);
     const newCount = await getAvailableRoomsCount();
     console.log(`✓ Auto-created rooms. Available now: ${newCount}`);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Clean up excess available rooms if count exceeds target
+ */
+export async function cleanupExcessRooms(): Promise<boolean> {
+  const redis = await client();
+  const availableCount = await getAvailableRoomsCount();
+
+  // If we have more than target, delete the excess
+  if (availableCount > TARGET_AVAILABLE_ROOMS) {
+    const roomsToDelete = availableCount - TARGET_AVAILABLE_ROOMS;
+    console.log(`🧹 Cleaning up ${roomsToDelete} excess rooms (available: ${availableCount}, target: ${TARGET_AVAILABLE_ROOMS})...`);
+
+    for (let i = 0; i < roomsToDelete; i++) {
+      const roomCode = await redis.lPop(AVAILABLE_ROOMS_KEY);
+      if (roomCode) {
+        const key = roomKey(roomCode);
+        await redis.del(key);
+      }
+    }
+
+    const newCount = await getAvailableRoomsCount();
+    console.log(`✓ Cleaned up rooms. Available now: ${newCount}`);
     return true;
   }
 
@@ -193,6 +223,10 @@ export async function unassignEmptyRoom(roomCode: string): Promise<RoomModel | n
   await redis.rPush(AVAILABLE_ROOMS_KEY, roomCode);
 
   console.log(`♻️  Room ${roomCode} unassigned and returned to available pool`);
+  
+  // Trigger cleanup if we have excess rooms
+  await cleanupExcessRooms();
+  
   return room;
 }
 
@@ -372,4 +406,21 @@ export function startIdleCheckService(interval: number = 30000, callback?: RoomI
 
   // Return cleanup function
   return () => clearInterval(checkInterval);
+}
+
+/**
+ * Start periodic room cleanup service
+ * Periodically ensures room count stays at target level
+ */
+export function startCleanupService(interval: number = 60000): () => void {
+  const cleanupInterval = setInterval(async () => {
+    try {
+      await cleanupExcessRooms();
+    } catch (error) {
+      console.error("Room cleanup service error:", error);
+    }
+  }, interval);
+
+  // Return cleanup function
+  return () => clearInterval(cleanupInterval);
 }

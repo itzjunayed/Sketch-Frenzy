@@ -15,6 +15,8 @@ import {
   updatePlayerActivity,
   checkIdlePlayersInRoom,
   startIdleCheckService,
+  startCleanupService,
+  cleanupExcessRooms,
   autoCreateRoomsIfNeeded,
   MAX_USERNAME_LENGTH,
   RoomCreateOptions,
@@ -505,6 +507,10 @@ startIdleCheckService(30000, (roomCode, idleSockets, newHostId) => {
   io.to(roomCode).emit("roomUpdated");
 });
 
+// ─── Room Cleanup Service ─────────────────────────────────────────────────────
+
+startCleanupService(60000); // Run cleanup every 60 seconds
+
 // ─── Socket.IO ────────────────────────────────────────────────────────────────
 
 io.on("connection", (socket) => {
@@ -839,6 +845,10 @@ server.listen(PORT, async () => {
   
   // Pre-create available rooms
   await preCreateRooms(100);
+  
+  // Clean up any excess rooms from previous runs to maintain target of 100
+  await cleanupExcessRooms();
+  
   const availableCount = await getAvailableRoomsCount();
   console.log(`├─ Available rooms: ${availableCount}`);
   console.log();

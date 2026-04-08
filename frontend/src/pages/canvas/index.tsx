@@ -20,6 +20,13 @@ export function Canvas() {
     username,
   } = useDrawingStore();
 
+  // ── Validate roomCode on mount ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!roomCode) {
+      navigate("/");
+    }
+  }, [roomCode, navigate]);
+
   // ── Connection events ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
