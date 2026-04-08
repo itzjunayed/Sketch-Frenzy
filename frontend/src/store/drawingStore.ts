@@ -21,6 +21,7 @@ export interface DrawingStateStore {
   isConnected: boolean;
   socketId: string | null;
   username: string;
+  hostId: string | null;  // Room host socket ID
 
   // ── Game core ──────────────────────────────────────────────────────────────
   players: Player[];
@@ -35,8 +36,7 @@ export interface DrawingStateStore {
   gamePhase: GamePhase;
   roundNumber: number;
   maxRounds: number;
-  hasGuessedCorrectly: boolean;
-
+  hasGuessedCorrectly: boolean;  maxPlayers: number;             // maximum players in current room
   // ── Word selection (drawer only) ───────────────────────────────────────────
   wordChoices: string[];          // options presented to the drawer
   isSelectingWord: boolean;       // true while drawer hasn't picked yet
@@ -54,6 +54,7 @@ export interface DrawingStateStore {
   setIsConnected: (connected: boolean) => void;
   setSocketId: (id: string | null) => void;
   setUsername: (name: string) => void;
+  setHostId: (id: string | null) => void;
   setPlayers: (players: Player[]) => void;
   addChatMessage: (msg: ChatMessage) => void;
   clearChatMessages: () => void;
@@ -68,6 +69,7 @@ export interface DrawingStateStore {
   setRoundNumber: (round: number) => void;
   setMaxRounds: (max: number) => void;
   setHasGuessedCorrectly: (has: boolean) => void;
+  setMaxPlayers: (max: number) => void;
   setWordChoices: (choices: string[]) => void;
   setIsSelectingWord: (val: boolean) => void;
   setWordSelectTimeLeft: (t: number) => void;
@@ -83,6 +85,7 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   isConnected: false,
   socketId: null,
   username: "",
+  hostId: null,
 
   players: [],
   chatMessages: [],
@@ -97,6 +100,7 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   roundNumber: 0,
   maxRounds: 3,
   hasGuessedCorrectly: false,
+  maxPlayers: 8,
 
   wordChoices: [],
   isSelectingWord: false,
@@ -112,6 +116,7 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   setIsConnected: (connected) => set({ isConnected: connected }),
   setSocketId: (id) => set({ socketId: id }),
   setUsername: (name) => set({ username: name }),
+  setHostId: (id) => set({ hostId: id }),
   setPlayers: (players) => set({ players }),
   addChatMessage: (msg) =>
     set((state) => ({ chatMessages: [...state.chatMessages.slice(-199), msg] })),
@@ -127,6 +132,7 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   setRoundNumber: (round) => set({ roundNumber: round }),
   setMaxRounds: (max) => set({ maxRounds: max }),
   setHasGuessedCorrectly: (has) => set({ hasGuessedCorrectly: has }),
+  setMaxPlayers: (max) => set({ maxPlayers: max }),
   setWordChoices: (choices) => set({ wordChoices: choices }),
   setIsSelectingWord: (val) => set({ isSelectingWord: val }),
   setWordSelectTimeLeft: (t) => set({ wordSelectTimeLeft: t }),

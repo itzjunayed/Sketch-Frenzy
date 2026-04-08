@@ -27,6 +27,7 @@ export interface RoomCreateOptions {
   maxPlayers: number;
   rounds: number;
   roundTime: number;
+  username: string;
 }
 
 export type RoomIdleCheckCallback = (roomCode: string, removedSocketIds: string[], newHostId?: string) => void;

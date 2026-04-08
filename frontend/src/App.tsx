@@ -11,7 +11,7 @@ export function App() {
       <Router>
       <Routes>
       <Route path="/" element={<Home/>}/>
-      <Route path="/canvas" element={<Canvas />}/>
+      <Route path="/:roomCode" element={<Canvas />}/>
       </Routes>
       </Router>
   );

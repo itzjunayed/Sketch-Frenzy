@@ -126,8 +126,13 @@ interface GameState {
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
+const socketToRoom = new Map<string, string>();
 const players = new Map<string, ServerPlayer>();
 let drawHistory: any[] = [];
+
+// Room-specific settings (loaded when game starts)
+let roomRoundTime: number = GAME_CONFIG.ROUND_TIME;
+let roomMaxRounds: number = GAME_CONFIG.MAX_ROUNDS;
 
 const game: GameState = {
   phase: "waiting",
@@ -162,6 +167,20 @@ function playerList() {
     hasGuessed: p.hasGuessed,
     isDrawing: game.drawOrder[game.drawerIndex] === p.id,
   }));
+}
+
+async function getPlayerListWithMaxPlayers() {
+  const list = playerList();
+  // Get maxPlayers from any connected player's room
+  let maxPlayers = 8;
+  for (const [socketId, roomCode] of socketToRoom.entries()) {
+    const room = await getRoom(roomCode);
+    if (room) {
+      maxPlayers = room.maxPlayers;
+      break;
+    }
+  }
+  return { players: list, maxPlayers };
 }
 
 function clearTimers() {
@@ -199,8 +218,9 @@ const io     = new Server(server, { cors: { origin: CLIENT_URL } });
 
 // ─── Game logic ───────────────────────────────────────────────────────────────
 
-function broadcastPlayerList() {
-  io.emit("playerList", playerList());
+async function broadcastPlayerList() {
+  const data = await getPlayerListWithMaxPlayers();
+  io.emit("playerList", data);
 }
 
 function startCountdown() {
@@ -210,8 +230,43 @@ function startCountdown() {
     return;
   }
   game.phase = "starting";
-  io.emit("gamePhase", { phase: "starting", maxRounds: game.maxRounds });
-  game.startTimeout = setTimeout(() => startRound(), GAME_CONFIG.COUNTDOWN_DELAY_MS);
+  
+  // Load room settings before emitting
+  void loadRoomSettings().then(() => {
+    io.emit("gamePhase", { phase: "starting", maxRounds: game.maxRounds });
+    game.startTimeout = setTimeout(() => startRound(), GAME_CONFIG.COUNTDOWN_DELAY_MS);
+  });
+}
+
+async function loadRoomSettings() {
+  try {
+    // Get any roomCode from socketToRoom map
+    let roomCode: string | undefined;
+    for (const code of socketToRoom.values()) {
+      roomCode = code;
+      break;
+    }
+
+    if (roomCode) {
+      const room = await getRoom(roomCode);
+      if (room) {
+        roomRoundTime = room.roundTime > 0 ? room.roundTime : GAME_CONFIG.ROUND_TIME;
+        roomMaxRounds = room.rounds > 0 ? room.rounds : GAME_CONFIG.MAX_ROUNDS;
+        game.maxRounds = roomMaxRounds;
+        game.timeLeft = roomRoundTime;
+        console.log(`✓ Loaded room settings: ${roomMaxRounds} rounds, ${roomRoundTime}s per round`);
+        return;
+      }
+    }
+  } catch (error) {
+    console.error("Failed to load room settings:", error);
+  }
+
+  // Fallback to defaults
+  roomRoundTime = GAME_CONFIG.ROUND_TIME;
+  roomMaxRounds = GAME_CONFIG.MAX_ROUNDS;
+  game.maxRounds = roomMaxRounds;
+  game.timeLeft = roomRoundTime;
 }
 
 /** Phase 1: pick word choices and send to drawer */
@@ -222,6 +277,9 @@ function startRound() {
     io.emit("waiting", { message: "⏳ Not enough players. Waiting..." });
     return;
   }
+
+  // Load room settings at the start of each round
+  void loadRoomSettings();
 
   // Advance round counter when all drawers in a round have gone
   if (game.drawerIndex >= game.drawOrder.length) {
@@ -300,7 +358,7 @@ function beginDrawingPhase(drawerId: string, word: string) {
   game.wordHint     = buildHint(word);
   game.wordLengths  = wordLengths(word);
   game.phase        = "drawing";
-  game.timeLeft     = GAME_CONFIG.ROUND_TIME;
+  game.timeLeft     = roomRoundTime;
   game.roundStartTime = Date.now();
   game.revealedIndices = new Set();
   game.hintsGiven   = 0;
@@ -327,7 +385,7 @@ function beginDrawingPhase(drawerId: string, word: string) {
   // e.g. for 80s: first at 53s left (~2/3 remaining), second at 27s (~1/3)
   const hintAt: number[] = [];
   for (let i = 1; i <= GAME_CONFIG.MAX_HINT_REVEALS; i++) {
-    hintAt.push(Math.floor(GAME_CONFIG.ROUND_TIME * (1 - i / (GAME_CONFIG.MAX_HINT_REVEALS + 1))));
+    hintAt.push(Math.floor(roomRoundTime * (1 - i / (GAME_CONFIG.MAX_HINT_REVEALS + 1))));
   }
 
   // Start countdown timer
@@ -425,10 +483,6 @@ function resetGame() {
   if (players.size >= GAME_CONFIG.MIN_PLAYERS) startCountdown();
 }
 
-// ─── Room Socket Tracking ─────────────────────────────────────────────────────
-
-const socketToRoom = new Map<string, string>(); // socketId -> roomCode
-
 // ─── Idle Check Service ───────────────────────────────────────────────────────
 
 startIdleCheckService(30000, (roomCode, idleSockets, newHostId) => {
@@ -501,14 +555,16 @@ io.on("connection", (socket) => {
 
     io.emit("waiting",    { message: `👋 ${safeName} joined!` });
     io.emit("gamePhase",  { phase: game.phase, maxRounds: game.maxRounds });
-
-    if (game.phase === "waiting" && players.size >= GAME_CONFIG.MIN_PLAYERS) {
-      startCountdown();
-    }
   });
 
   socket.on("createRoom", async (options: RoomCreateOptions, callback?: (result: { success: boolean; roomCode?: string; error?: string }) => void) => {
     try {
+      // If socket was in a previous room, leave it first
+      const previousRoom = socketToRoom.get(socket.id);
+      if (previousRoom) {
+        socket.leave(previousRoom);
+      }
+
       // Extract client IP address
       const clientIP =
         (socket.handshake.headers["x-forwarded-for"] as string)?.split(",")[0].trim() ||
@@ -521,15 +577,40 @@ io.on("connection", (socket) => {
         return;
       }
       
+      // Add the host as the first player in the room
+      const safeName = String(options.username ?? "").trim().slice(0, MAX_USERNAME_LENGTH) || "Host";
+      const updatedRoom = await addPlayerToRoom(room.code, socket.id, safeName);
+      
+      // Track socket-to-room mapping
+      socketToRoom.set(socket.id, room.code);
+      socket.join(room.code);
+      
       // Auto-create new rooms if available count drops below threshold
       await autoCreateRoomsIfNeeded();
       
       callback?.({ success: true, roomCode: room.code });
-      socket.emit("roomCreated", { roomCode: room.code });
+      io.to(room.code).emit("roomCreated", { roomCode: room.code, hostId: socket.id });
     } catch (error) {
       console.error("Room assignment failed:", error);
       callback?.({ success: false, error: String(error) });
     }
+  });
+
+  // ── startGame (host manually starts the game) ───────────────────────────────
+  socket.on("startGame", () => {
+    if (game.phase !== "waiting") {
+      socket.emit("error", { message: "Game is not in waiting phase" });
+      return;
+    }
+
+    if (players.size < GAME_CONFIG.MIN_PLAYERS) {
+      socket.emit("error", { message: `Need at least ${GAME_CONFIG.MIN_PLAYERS} players to start` });
+      return;
+    }
+
+    // Only host can start the game
+    // For now, we'll allow any player to start (can be restricted to host later)
+    startCountdown();
   });
 
   // ── selectWord (drawer picks from the offered choices) ─────────────────────
@@ -662,6 +743,12 @@ io.on("connection", (socket) => {
       // Add player to room
       const safeName = String(username ?? "").trim().slice(0, MAX_USERNAME_LENGTH) || "Guest";
       const updatedRoom = await addPlayerToRoom(roomCode, socket.id, safeName);
+
+      // Leave previous room if socket is already in one
+      const previousRoom = socketToRoom.get(socket.id);
+      if (previousRoom) {
+        socket.leave(previousRoom);
+      }
 
       // Track socket-to-room mapping
       socketToRoom.set(socket.id, roomCode);

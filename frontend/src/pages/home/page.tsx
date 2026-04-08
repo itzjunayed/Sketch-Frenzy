@@ -359,8 +359,8 @@ const Home = () => {
     const cleanup = onRoomCreated(socket, (code: string) => {
       setRoomCode(code);
       setIsCreating(false);
-      // Navigate to canvas with room code as param
-      setTimeout(() => navigate(`/canvas?room=${code}`), 500);
+      // Navigate to canvas with room code as path param
+      setTimeout(() => navigate(`/${code}`), 500);
     });
 
     return cleanup;
@@ -382,6 +382,7 @@ const Home = () => {
       maxPlayers,
       rounds,
       roundTime,
+      username: createUsername,
     });
 
     if (!result.success) {
@@ -415,8 +416,8 @@ const Home = () => {
     if (result.success) {
       // Store username for use in canvas
       localStorage.setItem("playerUsername", joinUsername);
-      // Navigate to canvas with room code as param
-      setTimeout(() => navigate(`/canvas?room=${joinRoomCode.toUpperCase()}`), 300);
+      // Navigate to canvas with room code as path param
+      setTimeout(() => navigate(`/${joinRoomCode.toUpperCase()}`), 300);
     } else {
       alert("Failed to join room: " + result.error);
       setIsJoining(false);

@@ -1,10 +1,13 @@
 import { useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useSocket } from "@/hooks/useSocket";
 import { DrawingCanvas } from "@/components/DrawingCanvas";
 import { useDrawingStore } from "@/store/drawingStore";
 import type { Player, ChatMessage, ScoreDelta } from "@/types/drawing";
 
 export function Canvas() {
+  const { roomCode } = useParams<{ roomCode: string }>();
+  const navigate = useNavigate();
   const socket = useSocket();
   const {
     setConnectedClients, setIsConnected, setSocketId,
@@ -13,7 +16,7 @@ export function Canvas() {
     setIsDrawer, setCurrentDrawerId, setCurrentDrawerName,
     setGamePhase, setRoundNumber, setMaxRounds, setHasGuessedCorrectly,
     setWordChoices, setIsSelectingWord, setWordSelectTimeLeft,
-    setRoundScoreDelta,
+    setRoundScoreDelta, setHostId, setMaxPlayers,
     username,
   } = useDrawingStore();
 
@@ -27,7 +30,12 @@ export function Canvas() {
       if (username) socket.emit("joinGame", { username });
     };
     const handleClientCountUpdate = (data: { count: number }) => setConnectedClients(data.count);
-    const handleDisconnect = () => { setIsConnected(false); setConnectedClients(0); };
+    const handleDisconnect = () => {
+      setIsConnected(false);
+      setConnectedClients(0);
+      // Redirect to home when disconnected
+      navigate("/");
+    };
     const handleConnectError = () => setIsConnected(false);
 
     socket.on("connect",           handleConnect);
@@ -43,13 +51,16 @@ export function Canvas() {
       socket.off("disconnect",        handleDisconnect);
       socket.off("connect_error",     handleConnectError);
     };
-  }, [socket, username, setConnectedClients, setIsConnected, setSocketId]);
+  }, [socket, username, setConnectedClients, setIsConnected, setSocketId, navigate]);
 
   // ── Game events ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
-    const handlePlayerList = (players: Player[]) => setPlayers(players);
+    const handlePlayerList = (data: { players: Player[]; maxPlayers: number }) => {
+      setPlayers(data.players);
+      setMaxPlayers(data.maxPlayers);
+    };
 
     const handleGamePhase = (data: {
       phase: string;
@@ -179,6 +190,24 @@ export function Canvas() {
       });
     };
 
+    const handleRoomCreated = (data: { roomCode: string; hostId: string }) => {
+      setHostId(data.hostId);
+    };
+
+    const handlePlayerJoined = (data: { username: string; players: Player[]; hostId: string }) => {
+      setPlayers(data.players);
+      setHostId(data.hostId);
+    };
+
+    const handlePlayerLeft = (data: { players: Player[]; hostId: string }) => {
+      setPlayers(data.players);
+      setHostId(data.hostId);
+    };
+
+    const handleHostTransferred = (data: { newHostId: string }) => {
+      setHostId(data.newHostId);
+    };
+
     socket.on("playerList",      handlePlayerList);
     socket.on("gamePhase",       handleGamePhase);
     socket.on("wordChoices",     handleWordChoices);
@@ -191,20 +220,28 @@ export function Canvas() {
     socket.on("roundEnd",        handleRoundEnd);
     socket.on("gameEnd",         handleGameEnd);
     socket.on("waiting",         handleWaiting);
+    socket.on("roomCreated",     handleRoomCreated);
+    socket.on("playerJoined",    handlePlayerJoined);
+    socket.on("playerLeft",      handlePlayerLeft);
+    socket.on("hostTransferred", handleHostTransferred);
 
     return () => {
-      socket.off("playerList",     handlePlayerList);
-      socket.off("gamePhase",      handleGamePhase);
-      socket.off("wordChoices",    handleWordChoices);
-      socket.off("roundStart",     handleRoundStart);
-      socket.off("yourWord",       handleYourWord);
-      socket.off("timerUpdate",    handleTimerUpdate);
-      socket.off("hintUpdate",     handleHintUpdate);
-      socket.off("newChatMessage", handleNewChatMessage);
-      socket.off("correctGuess",   handleCorrectGuess);
-      socket.off("roundEnd",       handleRoundEnd);
-      socket.off("gameEnd",        handleGameEnd);
-      socket.off("waiting",        handleWaiting);
+      socket.off("playerList",       handlePlayerList);
+      socket.off("gamePhase",        handleGamePhase);
+      socket.off("wordChoices",      handleWordChoices);
+      socket.off("roundStart",       handleRoundStart);
+      socket.off("yourWord",         handleYourWord);
+      socket.off("timerUpdate",      handleTimerUpdate);
+      socket.off("hintUpdate",       handleHintUpdate);
+      socket.off("newChatMessage",   handleNewChatMessage);
+      socket.off("correctGuess",     handleCorrectGuess);
+      socket.off("roundEnd",         handleRoundEnd);
+      socket.off("gameEnd",          handleGameEnd);
+      socket.off("waiting",          handleWaiting);
+      socket.off("roomCreated",      handleRoomCreated);
+      socket.off("playerJoined",     handlePlayerJoined);
+      socket.off("playerLeft",       handlePlayerLeft);
+      socket.off("hostTransferred",  handleHostTransferred);
     };
   }, [
     socket,
@@ -213,12 +250,12 @@ export function Canvas() {
     setIsDrawer, setCurrentDrawerId, setCurrentDrawerName,
     setGamePhase, setRoundNumber, setMaxRounds, setHasGuessedCorrectly,
     setWordChoices, setIsSelectingWord, setWordSelectTimeLeft,
-    setRoundScoreDelta,
+    setRoundScoreDelta, setHostId, setMaxPlayers,
   ]);
 
   return (
     <div className="h-screen bg-background overflow-hidden">
-      <DrawingCanvas socket={socket} />
+      <DrawingCanvas socket={socket} roomCode={roomCode} />
     </div>
   );
 }

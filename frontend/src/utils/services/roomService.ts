@@ -5,6 +5,7 @@ export interface RoomCreateOptions {
   maxPlayers: number;
   rounds: number;
   roundTime: number;
+  username: string;
 }
 
 export interface RoomCreatedResult {
@@ -34,6 +35,7 @@ export async function createRoom(
     maxPlayers: options.maxPlayers ?? ROOM_CONSTRAINTS.maxPlayers.default,
     rounds: options.rounds ?? ROOM_CONSTRAINTS.rounds.default,
     roundTime: options.roundTime ?? ROOM_CONSTRAINTS.roundTime.default,
+    username: String(options.username ?? "").trim() || "Host",
   };
 
   // Validate settings

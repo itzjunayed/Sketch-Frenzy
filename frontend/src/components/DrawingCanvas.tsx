@@ -10,6 +10,7 @@ import type { DrawingTool } from "@/types/drawing";
 
 interface DrawingCanvasProps {
   socket: Socket | null;
+  roomCode?: string;
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -786,7 +787,7 @@ function hintCountLabel(lengths: number[]): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function DrawingCanvas({ socket }: DrawingCanvasProps) {
+export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
   const canvasRef     = useRef<HTMLCanvasElement>(null);
   const contextRef    = useRef<CanvasRenderingContext2D | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
@@ -817,9 +818,9 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
     players, chatMessages, wordHint, wordLengths, currentWord,
     timeLeft, isDrawer, currentDrawerName, gamePhase,
     roundNumber, maxRounds, hasGuessedCorrectly,
-    username, setUsername,
+    username, setUsername, hostId, socketId,
     wordChoices, isSelectingWord, wordSelectTimeLeft,
-    roundScoreDelta,
+    roundScoreDelta, maxPlayers,
   } = useDrawingStore();
 
   // ── Username ────────────────────────────────────────────────────────────────
@@ -829,12 +830,12 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
     const name = localUsername.trim();
     if (!name) return;
     setUsername(name);
-    localStorage.setItem("sf_username", name);
+    localStorage.setItem("playerUsername", name);
     if (socket) socket.emit("joinGame", { username: name });
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem("sf_username");
+    const saved = localStorage.getItem("playerUsername");
     if (saved) setUsername(saved);
   }, [setUsername]);
 
@@ -1228,6 +1229,24 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
             </div>
           </div>
 
+          {roomCode && (
+            <div style={{
+              background: 'var(--cream)',
+              border: '2.5px solid var(--ink)',
+              borderRadius: '8px',
+              padding: '6px 14px',
+              fontFamily: "'Fredoka One', cursive",
+              fontSize: '0.9rem',
+              fontWeight: 700,
+              color: 'var(--ink)',
+              boxShadow: '3px 3px 0 var(--ink)',
+              letterSpacing: '1px',
+              minWidth: 'fit-content',
+            }}>
+              🔑 {roomCode}
+            </div>
+          )}
+
           {roundNumber > 0 && (
             <div className="gf-round-badge">Round {roundNumber}/{maxRounds}</div>
           )}
@@ -1243,7 +1262,7 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
 
         {/* ── Players panel ── */}
         <div className="gf-players">
-          <div className="gf-panel-title">👥 Players</div>
+          <div className="gf-panel-title">👥 Players ({players.length}/{maxPlayers})</div>
           <div className="gf-player-list">
             {players.length === 0 ? (
               <div style={{ padding: "12px 8px", color: "#aaa", fontSize: "0.8rem", fontWeight: 700, textAlign: "center" }}>
@@ -1256,7 +1275,10 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
                   className={`gf-player-row ${p.isDrawing ? "drawing" : ""} ${p.hasGuessed && !p.isDrawing ? "guessed" : ""}`}
                 >
                   <div className="gf-player-avatar">{p.username[0]?.toUpperCase() ?? "?"}</div>
-                  <div className="gf-player-name">{p.username}</div>
+                  <div className="gf-player-name">
+                    {p.username}
+                    {p.id === hostId ? <span style={{ fontSize: '0.75rem', marginLeft: '4px', color: 'var(--gold)' }}>(host)</span> : null}
+                  </div>
                   <div className="gf-player-score">{p.score}</div>
                   <div className="gf-player-status">
                     {p.isDrawing ? "🎨" : p.hasGuessed ? "✅" : i === 0 && gamePhase === "drawing" ? "👑" : ""}
@@ -1385,7 +1407,82 @@ export function DrawingCanvas({ socket }: DrawingCanvasProps) {
               {/* ── Phase overlays (waiting / starting / game end) ── */}
               {gamePhase === "waiting" && !isSelectingWord && !showRoundEnd && (
                 <div className="gf-canvas-overlay">
-                  <div className="gf-overlay-text">⏳<br/>Waiting for<br/>more players…</div>
+                  <div className="gf-overlay-content" style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '16px',
+                    padding: '20px',
+                  }}>
+                    <div className="gf-overlay-text" style={{ marginBottom: '10px' }}>
+                      ⏳ Waiting for players…
+                    </div>
+                    
+                    <div style={{
+                      background: 'rgba(255, 253, 244, 0.95)',
+                      border: '3px solid #1a1a2e',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      minWidth: '200px',
+                    }}>
+                      <div style={{
+                        fontSize: '0.9rem',
+                        fontWeight: 700,
+                        color: '#1a1a2e',
+                        marginBottom: '12px',
+                        textAlign: 'center',
+                      }}>
+                        Players Joined ({players.length})
+                      </div>
+                      {players.map((player, i) => (
+                        <div key={player.id} style={{
+                          fontSize: '0.85rem',
+                          padding: '6px 0',
+                          color: '#1a1a2e',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}>
+                          {player.id === hostId ? '👑' : '👤'}
+                          <span>
+                            {player.username}
+                            {player.id === hostId ? <span style={{ fontSize: '0.75rem', marginLeft: '4px', color: '#c49430' }}> (host)</span> : null}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {socketId === hostId && (
+                      <button
+                        onClick={() => socket?.emit('startGame')}
+                        style={{
+                          background: '#3db870',
+                          color: '#fff',
+                          border: '2.5px solid #1a1a2e',
+                          borderRadius: '8px',
+                          padding: '10px 20px',
+                          fontFamily: "'Fredoka One', cursive",
+                          fontSize: '1rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          boxShadow: '4px 4px 0 #1a1a2e',
+                          transition: 'all 0.1s',
+                        }}
+                        onMouseDown={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.boxShadow = '2px 2px 0 #1a1a2e';
+                          (e.currentTarget as HTMLButtonElement).style.transform = 'translate(2px, 2px)';
+                        }}
+                        onMouseUp={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.boxShadow = '4px 4px 0 #1a1a2e';
+                          (e.currentTarget as HTMLButtonElement).style.transform = 'translate(0, 0)';
+                        }}
+                      >
+                        🚀 Start Game
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
               {gamePhase === "starting" && (
