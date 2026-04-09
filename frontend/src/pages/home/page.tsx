@@ -354,9 +354,6 @@ const Home = () => {
   // Alert modal state
   const [alertMessage, setAlertMessage] = useState("");
   const [alertOpen, setAlertOpen] = useState(false);
-  
-  // Copy button state
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!socket) {
@@ -410,8 +407,7 @@ const Home = () => {
     if (!roomCode) return;
     try {
       await navigator.clipboard.writeText(roomCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      // Copy successful, will navigate shortly
     } catch (err) {
       setAlertMessage("Failed to copy room code");
       setAlertOpen(true);
@@ -557,29 +553,9 @@ const Home = () => {
                   textAlign: "center",
                   fontWeight: 700,
                   color: "#1b5e20",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
                 }}
                 >
                   Room Code: <span style={{ fontSize: "1.2rem", letterSpacing: "2px" }}>{roomCode}</span>
-                  <button
-                    onClick={handleCopyRoomCode}
-                    style={{
-                      padding: "6px 12px",
-                      background: copied ? "#2a9a57" : "#3db870",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "6px",
-                      cursor: "pointer",
-                      fontSize: "0.85rem",
-                      fontWeight: "600",
-                      transition: "background 0.3s",
-                    }}
-                  >
-                    {copied ? "✓ Copied!" : "📋 Copy"}
-                  </button>
                 </div>
               )}
             </Tabs.Content>
@@ -642,17 +618,38 @@ const Home = () => {
       
       {/* Alert Modal */}
       <Dialog open={alertOpen} onOpenChange={setAlertOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md border-2 border-ink rounded-lg shadow-lg" style={{ background: "linear-gradient(135deg, #fdf6e3 0%, #fffdf4 100%)" }}>
           <DialogHeader>
-            <DialogTitle>Notice</DialogTitle>
+            <DialogTitle style={{ color: "#1a1a2e", fontSize: "1.5rem", fontWeight: "800" }}>📬 Notice</DialogTitle>
           </DialogHeader>
-          <DialogDescription>{alertMessage}</DialogDescription>
+          <div style={{
+            padding: "12px",
+            background: "rgba(58, 144, 217, 0.08)",
+            border: "2px solid #4a90d9",
+            borderRadius: "8px",
+            color: "#1a1a2e",
+            fontSize: "0.95rem",
+            lineHeight: "1.6",
+            fontWeight: "500",
+          }}>
+            {alertMessage}
+          </div>
           <div className="flex gap-3 justify-end mt-6">
             <Button
               onClick={() => setAlertOpen(false)}
               className="w-full"
+              style={{
+                background: "linear-gradient(135deg, #3db870 0%, #2a9a57 100%)",
+                color: "white",
+                fontWeight: "700",
+                padding: "10px",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "1rem",
+              }}
             >
-              OK
+              ✓ Got it!
             </Button>
           </div>
         </DialogContent>

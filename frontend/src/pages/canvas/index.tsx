@@ -12,6 +12,7 @@ export function Canvas() {
   const navigate = useNavigate();
   const socket = useSocket();
   const [showRoomErrorModal, setShowRoomErrorModal] = useState(false);
+  const [copied, setCopied] = useState(false);
   const {
     setConnectedClients, setIsConnected, setSocketId,
     setPlayers, addChatMessage, clearChatMessages,
@@ -29,6 +30,18 @@ export function Canvas() {
       navigate("/");
     }
   }, [roomCode, navigate]);
+
+  // ── Copy room code handler ─────────────────────────────────────────────────
+  const handleCopyRoomCode = async () => {
+    if (!roomCode) return;
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
 
   // ── Connection events ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -272,22 +285,85 @@ export function Canvas() {
 
   return (
     <div className="h-screen bg-background overflow-hidden">
+      {/* Room Code with Copy Button */}
+      {roomCode && (
+        <div
+          style={{
+            position: "absolute",
+            top: "12px",
+            right: "12px",
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "8px 12px",
+            background: "linear-gradient(135deg, rgba(61, 184, 112, 0.95) 0%, rgba(42, 154, 87, 0.95) 100%)",
+            border: "2px solid #3db870",
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "0.85rem",
+              fontWeight: "700",
+              color: "white",
+              letterSpacing: "1px",
+            }}
+          >
+            {roomCode}
+          </span>
+          <button
+            onClick={handleCopyRoomCode}
+            style={{
+              padding: "4px 10px",
+              background: copied ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.2)",
+              color: "white",
+              border: "1px solid rgba(255, 255, 255, 0.4)",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "0.8rem",
+              fontWeight: "600",
+              transition: "all 0.3s",
+              whiteSpace: "nowrap",
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = copied ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.3)";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = copied ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.2)";
+            }}
+          >
+            {copied ? "✓" : "📋"}
+          </button>
+        </div>
+      )}
+      
       <DrawingCanvas socket={socket} roomCode={roomCode} />
       
       {/* Room Error Modal */}
       <Dialog open={showRoomErrorModal} onOpenChange={setShowRoomErrorModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md border-2 border-ink rounded-lg shadow-lg" style={{ background: "linear-gradient(135deg, #fdf6e3 0%, #fffdf4 100%)" }}>
           <DialogHeader>
-            <DialogTitle>Cannot Join Room</DialogTitle>
-            <DialogDescription>
-              {roomError === "Room is full" 
-                ? "This room has reached its maximum player capacity. Please try another room."
-                : roomError === "Room not found"
-                ? "This room does not exist. Please check the room code."
-                : roomError || "An error occurred while trying to join the room."}
-            </DialogDescription>
+            <DialogTitle style={{ color: "#e85555", fontSize: "1.5rem", fontWeight: "800" }}>⚠️ Cannot Join Room</DialogTitle>
           </DialogHeader>
-          <div className="flex gap-3 justify-end">
+          <div style={{
+            padding: "12px",
+            background: "rgba(232, 85, 85, 0.08)",
+            border: "2px solid #e85555",
+            borderRadius: "8px",
+            color: "#1a1a2e",
+            fontSize: "0.95rem",
+            lineHeight: "1.6",
+            fontWeight: "500",
+          }}>
+            {roomError === "Room is full" 
+              ? "🏠 This room has reached its maximum player capacity. Please try another room."
+              : roomError === "Room not found"
+              ? "🔍 This room does not exist. Please check the room code."
+              : roomError || "⚡ An error occurred while trying to join the room."}
+          </div>
+          <div className="flex gap-3 justify-end mt-6">
             <Button
               onClick={() => {
                 setShowRoomErrorModal(false);
@@ -295,8 +371,18 @@ export function Canvas() {
                 navigate("/");
               }}
               className="w-full"
+              style={{
+                background: "linear-gradient(135deg, #4a90d9 0%, #2e5aa8 100%)",
+                color: "white",
+                fontWeight: "700",
+                padding: "10px",
+                border: "none",
+                borderRadius: "8px",
+                cursor: "pointer",
+                fontSize: "1rem",
+              }}
             >
-              Return to Home
+              🏠 Return to Home
             </Button>
           </div>
         </DialogContent>
