@@ -904,9 +904,9 @@ server.listen(PORT, async () => {
   console.log(`└─ Environment:  ${NODE_ENV}`);
   
   // Pre-create available rooms
-  await preCreateRooms(100);
+  await preCreateRooms(40);
   
-  // Clean up any excess rooms from previous runs to maintain target of 100
+  // Clean up any excess rooms from previous runs to maintain target
   await cleanupExcessRooms();
   
   const availableCount = await getAvailableRoomsCount();

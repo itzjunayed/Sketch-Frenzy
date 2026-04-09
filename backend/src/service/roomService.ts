@@ -33,9 +33,9 @@ export interface RoomCreateOptions {
 export type RoomIdleCheckCallback = (roomCode: string, removedSocketIds: string[], newHostId?: string) => void;
 
 const IDLE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
-const TARGET_AVAILABLE_ROOMS = 100; // Always maintain this many available rooms
-const AUTO_CREATE_COUNT = 100; // How many rooms to create in batch
-const CLEANUP_THRESHOLD = 150; // Delete excess rooms if available > this
+const TARGET_AVAILABLE_ROOMS = 40; // Maintain ~40 available rooms (typical 5-10 concurrent games)
+const AUTO_CREATE_COUNT = 40; // Create rooms in batches of 40
+const CLEANUP_THRESHOLD = 80; // Delete excess rooms if available > 80 (2x target)
 
 const ROOM_KEY_PREFIX = "room:";
 const AVAILABLE_ROOMS_KEY = "available_rooms";
