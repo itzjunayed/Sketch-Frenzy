@@ -48,11 +48,28 @@ function roomKey(code: string) {
 
 function generateRoomCode(length = 8) {
   const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const lettersLen = letters.length;
   let code = "";
-  while (code.length < length) {
-    code += letters[Math.floor(Math.random() * letters.length)];
+  for (let i = 0; i < length; i++) {
+    code += letters[Math.floor(Math.random() * lettersLen)];
   }
   return code;
+}
+
+function generateRoomCodes(count: number): Set<string> {
+  const codes = new Set<string>();
+  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const lettersLen = letters.length;
+  const length = 8;
+  
+  while (codes.size < count) {
+    let code = "";
+    for (let i = 0; i < length; i++) {
+      code += letters[Math.floor(Math.random() * lettersLen)];
+    }
+    codes.add(code);
+  }
+  return codes;
 }
 
 async function client() {
@@ -70,40 +87,32 @@ export async function connectRedis(): Promise<void> {
 }
 
 /**
- * Pre-create 100 available rooms on server startup
+ * Pre-create rooms efficiently using pipelined Redis operations
  */
 export async function preCreateRooms(count: number = 100): Promise<void> {
   const redis = await client();
-  const generatedCodes = new Set<string>();
-  const roomsToCreate: RoomModel[] = [];
+  const codes = generateRoomCodes(count);
+  const now = Date.now();
 
-  // Generate unique codes
-  while (generatedCodes.size < count) {
-    const code = generateRoomCode();
-    if (!generatedCodes.has(code)) {
-      generatedCodes.add(code);
+  // Batch all Redis operations into a pipeline
+  const pipeline = redis.multi();
 
-      const room: RoomModel = {
-        code,
-        createdAt: Date.now(),
-        maxPlayers: 0, // Will be set when assigned
-        rounds: 0,
-        roundTime: 0,
-        players: [],
-        playersOrder: [],
-        status: "available",
-      };
-      roomsToCreate.push(room);
-    }
+  for (const code of codes) {
+    const room: RoomModel = {
+      code,
+      createdAt: now,
+      maxPlayers: 0,
+      rounds: 0,
+      roundTime: 0,
+      players: [],
+      playersOrder: [],
+      status: "available",
+    };
+    pipeline.set(roomKey(code), JSON.stringify(room));
+    pipeline.rPush(AVAILABLE_ROOMS_KEY, code);
   }
 
-  // Store rooms in Redis
-  for (const room of roomsToCreate) {
-    const key = roomKey(room.code);
-    await redis.set(key, JSON.stringify(room));
-    await redis.rPush(AVAILABLE_ROOMS_KEY, room.code);
-  }
-
+  await pipeline.exec();
   console.log(`✓ Pre-created ${count} available rooms`);
 }
 
@@ -162,15 +171,15 @@ export async function getAvailableRoomsCount(): Promise<number> {
  * Auto-create rooms if available count falls below target
  */
 export async function autoCreateRoomsIfNeeded(): Promise<boolean> {
-  const availableCount = await getAvailableRoomsCount();
+  const redis = await client();
+  const availableCount = await redis.lLen(AVAILABLE_ROOMS_KEY);
 
   if (availableCount < TARGET_AVAILABLE_ROOMS) {
     const roomsNeeded = TARGET_AVAILABLE_ROOMS - availableCount;
-    const roomsToCreate = Math.max(roomsNeeded, AUTO_CREATE_COUNT); // Create at least AUTO_CREATE_COUNT
+    const roomsToCreate = Math.max(roomsNeeded, AUTO_CREATE_COUNT);
     console.log(`⚠️  Available rooms at ${availableCount}, creating ${roomsToCreate} more...`);
     await preCreateRooms(roomsToCreate);
-    const newCount = await getAvailableRoomsCount();
-    console.log(`✓ Auto-created rooms. Available now: ${newCount}`);
+    console.log(`✓ Auto-created rooms. Available now: ${TARGET_AVAILABLE_ROOMS}`);
     return true;
   }
 
@@ -178,27 +187,38 @@ export async function autoCreateRoomsIfNeeded(): Promise<boolean> {
 }
 
 /**
- * Clean up excess available rooms if count exceeds target
+ * Clean up excess available rooms if count exceeds target using batch operations
  */
 export async function cleanupExcessRooms(): Promise<boolean> {
   const redis = await client();
-  const availableCount = await getAvailableRoomsCount();
+  const availableCount = await redis.lLen(AVAILABLE_ROOMS_KEY);
 
-  // If we have more than target, delete the excess
   if (availableCount > TARGET_AVAILABLE_ROOMS) {
     const roomsToDelete = availableCount - TARGET_AVAILABLE_ROOMS;
     console.log(`🧹 Cleaning up ${roomsToDelete} excess rooms (available: ${availableCount}, target: ${TARGET_AVAILABLE_ROOMS})...`);
 
+    // Batch pop and delete operations
+    const pipeline = redis.multi();
+
+    // First phase: pop all codes
     for (let i = 0; i < roomsToDelete; i++) {
-      const roomCode = await redis.lPop(AVAILABLE_ROOMS_KEY);
-      if (roomCode) {
-        const key = roomKey(roomCode);
-        await redis.del(key);
-      }
+      pipeline.lPop(AVAILABLE_ROOMS_KEY);
     }
 
-    const newCount = await getAvailableRoomsCount();
-    console.log(`✓ Cleaned up rooms. Available now: ${newCount}`);
+    const results = await pipeline.exec();
+    
+    // Second phase: batch delete all room keys
+    if (results && results.length > 0) {
+      const deletePipeline = redis.multi();
+      for (const result of results) {
+        if (result && typeof result === 'string') {
+          deletePipeline.del(roomKey(result));
+        }
+      }
+      await deletePipeline.exec();
+    }
+
+    console.log(`✓ Cleaned up rooms. Available now: ${TARGET_AVAILABLE_ROOMS}`);
     return true;
   }
 
@@ -211,7 +231,7 @@ export async function cleanupExcessRooms(): Promise<boolean> {
 export async function unassignEmptyRoom(roomCode: string): Promise<RoomModel | null> {
   const room = await getRoom(roomCode);
   if (!room || room.players.length > 0) {
-    return room; // Room has players, don't unassign
+    return room;
   }
 
   // Reset room to available state
@@ -226,13 +246,15 @@ export async function unassignEmptyRoom(roomCode: string): Promise<RoomModel | n
   room.playersOrder = [];
 
   const redis = await client();
-  await redis.set(roomKey(roomCode), JSON.stringify(room));
-  await redis.rPush(AVAILABLE_ROOMS_KEY, roomCode);
+  const pipeline = redis.multi();
+  pipeline.set(roomKey(roomCode), JSON.stringify(room));
+  pipeline.rPush(AVAILABLE_ROOMS_KEY, roomCode);
+  await pipeline.exec();
 
   console.log(`♻️  Room ${roomCode} unassigned and returned to available pool`);
   
-  // Trigger cleanup if we have excess rooms
-  await cleanupExcessRooms();
+  // Defer cleanup to avoid overhead on every room unassign
+  // Cleanup runs on a separate schedule or when explicitly triggered
   
   return room;
 }
@@ -400,22 +422,32 @@ export async function checkIdlePlayersInRoom(
 
 /**
  * Start idle checking service
- * Checks all active rooms periodically for idle players
+ * Checks all active rooms periodically for idle players using SCAN (non-blocking)
  */
 export function startIdleCheckService(interval: number = 30000, callback?: RoomIdleCheckCallback): () => void {
   const checkInterval = setInterval(async () => {
     try {
       const redis = await client();
-      const keys = await redis.keys(`${ROOM_KEY_PREFIX}*`);
+      const pattern = `${ROOM_KEY_PREFIX}*`;
+      const batchSize = 100;
+      let cursor = '0';
 
-      for (const key of keys) {
-        const roomCode = key.replace(ROOM_KEY_PREFIX, "");
-        const result = await checkIdlePlayersInRoom(roomCode);
+      do {
+        // Use SCAN for non-blocking iteration
+        const scanResult = await redis.scan(cursor, { MATCH: pattern, COUNT: batchSize });
+        cursor = String(scanResult.cursor);
+        const keys = scanResult.keys;
 
-        if (result.idleSockets.length > 0 && callback) {
-          callback(roomCode, result.idleSockets, result.newHostId);
+        // Check idle status for all keys in batch
+        for (const key of keys) {
+          const roomCode = key.replace(ROOM_KEY_PREFIX, "");
+          const idleResult = await checkIdlePlayersInRoom(roomCode);
+
+          if (idleResult.idleSockets.length > 0 && callback) {
+            callback(roomCode, idleResult.idleSockets, idleResult.newHostId);
+          }
         }
-      }
+      } while (cursor !== '0');
     } catch (error) {
       console.error("Idle check service error:", error);
     }

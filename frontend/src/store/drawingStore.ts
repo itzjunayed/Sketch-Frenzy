@@ -45,6 +45,9 @@ export interface DrawingStateStore {
   // ── Round-end overlay ──────────────────────────────────────────────────────
   roundScoreDelta: ScoreDelta[];  // points gained this round per player
 
+  // ── Room errors ────────────────────────────────────────────────────────────
+  roomError: string | null;       // error message when joining a room fails
+
   // ── Setters ────────────────────────────────────────────────────────────────
   setTool: (tool: DrawingTool) => void;
   setColor: (color: string) => void;
@@ -74,6 +77,7 @@ export interface DrawingStateStore {
   setIsSelectingWord: (val: boolean) => void;
   setWordSelectTimeLeft: (t: number) => void;
   setRoundScoreDelta: (deltas: ScoreDelta[]) => void;
+  setRoomError: (error: string | null) => void;
 }
 
 export const useDrawingStore = create<DrawingStateStore>((set) => ({
@@ -107,6 +111,7 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   wordSelectTimeLeft: 0,
 
   roundScoreDelta: [],
+  roomError: null,
 
   setTool: (tool) => set({ tool }),
   setColor: (color) => set({ color }),
@@ -137,4 +142,5 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   setIsSelectingWord: (val) => set({ isSelectingWord: val }),
   setWordSelectTimeLeft: (t) => set({ wordSelectTimeLeft: t }),
   setRoundScoreDelta: (deltas) => set({ roundScoreDelta: deltas }),
+  setRoomError: (error) => set({ roomError: error }),
 }));

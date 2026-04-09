@@ -1,14 +1,17 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useSocket } from "@/hooks/useSocket";
 import { DrawingCanvas } from "@/components/DrawingCanvas";
 import { useDrawingStore } from "@/store/drawingStore";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import type { Player, ChatMessage, ScoreDelta } from "@/types/drawing";
 
 export function Canvas() {
   const { roomCode } = useParams<{ roomCode: string }>();
   const navigate = useNavigate();
   const socket = useSocket();
+  const [showRoomErrorModal, setShowRoomErrorModal] = useState(false);
   const {
     setConnectedClients, setIsConnected, setSocketId,
     setPlayers, addChatMessage, clearChatMessages,
@@ -16,7 +19,7 @@ export function Canvas() {
     setIsDrawer, setCurrentDrawerId, setCurrentDrawerName,
     setGamePhase, setRoundNumber, setMaxRounds, setHasGuessedCorrectly,
     setWordChoices, setIsSelectingWord, setWordSelectTimeLeft,
-    setRoundScoreDelta, setHostId, setMaxPlayers,
+    setRoundScoreDelta, setHostId, setMaxPlayers, setRoomError, roomError,
     username,
   } = useDrawingStore();
 
@@ -34,7 +37,14 @@ export function Canvas() {
     const handleConnect = () => {
       setIsConnected(true);
       setSocketId(socket.id || null);
-      if (username) socket.emit("joinGame", { username });
+      if (username && roomCode) {
+        socket.emit("joinRoom", { roomCode, username }, (result: { success: boolean; error?: string }) => {
+          if (!result.success) {
+            setRoomError(result.error || "Failed to join room");
+            setShowRoomErrorModal(true);
+          }
+        });
+      }
     };
     const handleClientCountUpdate = (data: { count: number }) => setConnectedClients(data.count);
     const handleDisconnect = () => {
@@ -58,7 +68,7 @@ export function Canvas() {
       socket.off("disconnect",        handleDisconnect);
       socket.off("connect_error",     handleConnectError);
     };
-  }, [socket, username, setConnectedClients, setIsConnected, setSocketId, navigate]);
+  }, [socket, username, roomCode, setConnectedClients, setIsConnected, setSocketId, navigate, setRoomError]);
 
   // ── Game events ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -257,12 +267,40 @@ export function Canvas() {
     setIsDrawer, setCurrentDrawerId, setCurrentDrawerName,
     setGamePhase, setRoundNumber, setMaxRounds, setHasGuessedCorrectly,
     setWordChoices, setIsSelectingWord, setWordSelectTimeLeft,
-    setRoundScoreDelta, setHostId, setMaxPlayers,
+    setRoundScoreDelta, setHostId, setMaxPlayers, setRoomError,
   ]);
 
   return (
     <div className="h-screen bg-background overflow-hidden">
       <DrawingCanvas socket={socket} roomCode={roomCode} />
+      
+      {/* Room Error Modal */}
+      <Dialog open={showRoomErrorModal} onOpenChange={setShowRoomErrorModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cannot Join Room</DialogTitle>
+            <DialogDescription>
+              {roomError === "Room is full" 
+                ? "This room has reached its maximum player capacity. Please try another room."
+                : roomError === "Room not found"
+                ? "This room does not exist. Please check the room code."
+                : roomError || "An error occurred while trying to join the room."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-3 justify-end">
+            <Button
+              onClick={() => {
+                setShowRoomErrorModal(false);
+                setRoomError(null);
+                navigate("/");
+              }}
+              className="w-full"
+            >
+              Return to Home
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

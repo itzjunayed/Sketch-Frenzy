@@ -488,6 +488,11 @@ function resetGame() {
 // ─── Idle Check Service ───────────────────────────────────────────────────────
 
 startIdleCheckService(30000, (roomCode, idleSockets, newHostId) => {
+  // Only handle idle players if game is actually running (not in waiting phase)
+  if (game.phase === "waiting") {
+    return;
+  }
+
   // Handle idle players
   for (const socketId of idleSockets) {
     const socket = io.sockets.sockets.get(socketId);
@@ -598,6 +603,61 @@ io.on("connection", (socket) => {
       io.to(room.code).emit("roomCreated", { roomCode: room.code, hostId: socket.id });
     } catch (error) {
       console.error("Room assignment failed:", error);
+      callback?.({ success: false, error: String(error) });
+    }
+  });
+
+  // ── joinRoom (join an existing room by code) ──────────────────────────────
+  socket.on("joinRoom", async (data: { roomCode: string; username: string }, callback?: (result: { success: boolean; error?: string }) => void) => {
+    try {
+      const room = await getRoom(data.roomCode);
+      
+      // Room doesn't exist
+      if (!room) {
+        callback?.({ success: false, error: "Room not found" });
+        return;
+      }
+
+      // Room is full
+      if (room.maxPlayers > 0 && room.players.length >= room.maxPlayers) {
+        callback?.({ success: false, error: "Room is full" });
+        return;
+      }
+
+      // If socket was in a previous room, leave it first
+      const previousRoom = socketToRoom.get(socket.id);
+      if (previousRoom) {
+        socket.leave(previousRoom);
+      }
+
+      // Add player to room
+      const safeName = String(data.username ?? "").trim().slice(0, MAX_USERNAME_LENGTH) || "Guest";
+      const updatedRoom = await addPlayerToRoom(room.code, socket.id, safeName);
+      
+      if (!updatedRoom) {
+        callback?.({ success: false, error: "Failed to join room" });
+        return;
+      }
+
+      // Track socket-to-room mapping
+      socketToRoom.set(socket.id, room.code);
+      socket.join(room.code);
+
+      // Add player to game state
+      if (!players.has(socket.id)) {
+        players.set(socket.id, {
+          id: socket.id, username: safeName,
+          score: 0, hasGuessed: false, joinedAt: Date.now(),
+        });
+      }
+
+      callback?.({ success: true });
+      
+      // Notify room of new player
+      io.to(room.code).emit("playerJoined", { username: safeName, players: Array.from(players.values()), hostId: room.host });
+      io.to(room.code).emit("playerList", await getPlayerListWithMaxPlayers());
+    } catch (error) {
+      console.error("Room join failed:", error);
       callback?.({ success: false, error: String(error) });
     }
   });
