@@ -12,7 +12,6 @@ export function Canvas() {
   const navigate = useNavigate();
   const socket = useSocket();
   const [showRoomErrorModal, setShowRoomErrorModal] = useState(false);
-  const [copied, setCopied] = useState(false);
   const {
     setConnectedClients, setIsConnected, setSocketId,
     setPlayers, addChatMessage, clearChatMessages,
@@ -30,18 +29,6 @@ export function Canvas() {
       navigate("/");
     }
   }, [roomCode, navigate]);
-
-  // ── Copy room code handler ─────────────────────────────────────────────────
-  const handleCopyRoomCode = async () => {
-    if (!roomCode) return;
-    try {
-      await navigator.clipboard.writeText(roomCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error("Failed to copy:", err);
-    }
-  };
 
   // ── Connection events ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -285,60 +272,6 @@ export function Canvas() {
 
   return (
     <div className="h-screen bg-background overflow-hidden">
-      {/* Room Code with Copy Button */}
-      {roomCode && (
-        <div
-          style={{
-            position: "absolute",
-            top: "12px",
-            right: "12px",
-            zIndex: 50,
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            padding: "8px 12px",
-            background: "linear-gradient(135deg, rgba(61, 184, 112, 0.95) 0%, rgba(42, 154, 87, 0.95) 100%)",
-            border: "2px solid #3db870",
-            borderRadius: "8px",
-            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "0.85rem",
-              fontWeight: "700",
-              color: "white",
-              letterSpacing: "1px",
-            }}
-          >
-            {roomCode}
-          </span>
-          <button
-            onClick={handleCopyRoomCode}
-            style={{
-              padding: "4px 10px",
-              background: copied ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.2)",
-              color: "white",
-              border: "1px solid rgba(255, 255, 255, 0.4)",
-              borderRadius: "6px",
-              cursor: "pointer",
-              fontSize: "0.8rem",
-              fontWeight: "600",
-              transition: "all 0.3s",
-              whiteSpace: "nowrap",
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = copied ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.3)";
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = copied ? "rgba(255, 255, 255, 0.3)" : "rgba(255, 255, 255, 0.2)";
-            }}
-          >
-            {copied ? "✓" : "📋"}
-          </button>
-        </div>
-      )}
-      
       <DrawingCanvas socket={socket} roomCode={roomCode} />
       
       {/* Room Error Modal */}

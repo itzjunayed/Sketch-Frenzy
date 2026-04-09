@@ -804,6 +804,7 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
   const [isOnCanvas, setIsOnCanvas] = useState(false);
   const [chatInput,  setChatInput ] = useState("");
   const [localUsername, setLocalUsername] = useState("");
+  const [copied, setCopied] = useState(false);
 
   // Round-end overlay local state
   const [showRoundEnd,    setShowRoundEnd   ] = useState(false);
@@ -1242,8 +1243,37 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
               boxShadow: '3px 3px 0 var(--ink)',
               letterSpacing: '1px',
               minWidth: 'fit-content',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
             }}>
               🔑 {roomCode}
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(roomCode);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  } catch (err) {
+                    console.error('Failed to copy:', err);
+                  }
+                }}
+                style={{
+                  padding: '4px 8px',
+                  background: copied ? 'var(--green)' : 'var(--gold)',
+                  color: 'var(--ink)',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  transition: 'all 0.3s',
+                  minWidth: 'fit-content',
+                }}
+                title="Copy room code"
+              >
+                {copied ? '✓ Copied!' : '📋 Copy'}
+              </button>
             </div>
           )}
 
