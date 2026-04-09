@@ -329,6 +329,8 @@ const styles = `
 import { useSocket } from "../../hooks/useSocket";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/dialog";
+import { Button } from "../../components/ui/button";
 import { ROOM_CONSTRAINTS, createRoom, onRoomCreated, joinRoomByCode } from "../../utils";
 
 const Home = () => {
@@ -348,6 +350,13 @@ const Home = () => {
   const [joinUsername, setJoinUsername] = useState("");
   const [joinRoomCode, setJoinRoomCode] = useState("");
   const [isJoining, setIsJoining] = useState(false);
+  
+  // Alert modal state
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertOpen, setAlertOpen] = useState(false);
+  
+  // Copy button state
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!socket) {
@@ -368,12 +377,14 @@ const Home = () => {
 
   const handleCreateRoom = async () => {
     if (!socket) {
-      alert("Still connecting to server... please wait");
+      setAlertMessage("Still connecting to server... please wait");
+      setAlertOpen(true);
       return;
     }
 
     if (!createUsername.trim()) {
-      alert("Please enter a username");
+      setAlertMessage("Please enter a username");
+      setAlertOpen(true);
       return;
     }
     
@@ -386,7 +397,8 @@ const Home = () => {
     });
 
     if (!result.success) {
-      alert("Failed to create room: " + result.error);
+      setAlertMessage("Failed to create room: " + result.error);
+      setAlertOpen(true);
       setIsCreating(false);
     } else {
       // Store username for use in canvas
@@ -394,19 +406,34 @@ const Home = () => {
     }
   };
 
+  const handleCopyRoomCode = async () => {
+    if (!roomCode) return;
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      setAlertMessage("Failed to copy room code");
+      setAlertOpen(true);
+    }
+  };
+
   const handleJoinRoom = async () => {
     if (!socket) {
-      alert("Still connecting to server... please wait");
+      setAlertMessage("Still connecting to server... please wait");
+      setAlertOpen(true);
       return;
     }
 
     if (!joinRoomCode.trim()) {
-      alert("Please enter a room code");
+      setAlertMessage("Please enter a room code");
+      setAlertOpen(true);
       return;
     }
 
     if (!joinUsername.trim()) {
-      alert("Please enter a username");
+      setAlertMessage("Please enter a username");
+      setAlertOpen(true);
       return;
     }
 
@@ -419,7 +446,8 @@ const Home = () => {
       // Navigate to canvas with room code as path param
       setTimeout(() => navigate(`/${joinRoomCode.toUpperCase()}`), 300);
     } else {
-      alert("Failed to join room: " + result.error);
+      setAlertMessage("Failed to join room: " + result.error);
+      setAlertOpen(true);
       setIsJoining(false);
     }
   };
@@ -529,9 +557,29 @@ const Home = () => {
                   textAlign: "center",
                   fontWeight: 700,
                   color: "#1b5e20",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
                 }}
                 >
                   Room Code: <span style={{ fontSize: "1.2rem", letterSpacing: "2px" }}>{roomCode}</span>
+                  <button
+                    onClick={handleCopyRoomCode}
+                    style={{
+                      padding: "6px 12px",
+                      background: copied ? "#2a9a57" : "#3db870",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "0.85rem",
+                      fontWeight: "600",
+                      transition: "background 0.3s",
+                    }}
+                  >
+                    {copied ? "✓ Copied!" : "📋 Copy"}
+                  </button>
                 </div>
               )}
             </Tabs.Content>
@@ -591,6 +639,24 @@ const Home = () => {
           </Tabs.Root>
         </div>
       </div>
+      
+      {/* Alert Modal */}
+      <Dialog open={alertOpen} onOpenChange={setAlertOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Notice</DialogTitle>
+          </DialogHeader>
+          <DialogDescription>{alertMessage}</DialogDescription>
+          <div className="flex gap-3 justify-end mt-6">
+            <Button
+              onClick={() => setAlertOpen(false)}
+              className="w-full"
+            >
+              OK
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
