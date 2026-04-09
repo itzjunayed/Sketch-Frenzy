@@ -131,6 +131,12 @@ export async function assignRoom(
     return null;
   }
 
+  // Safety: Only assign if room is available
+  if (room.status !== "available") {
+    console.error(`Room ${roomCode} is not available (status: ${room.status})`);
+    return null;
+  }
+
   room.status = "active";
   room.host = hostId;
   room.hostIP = hostIP;
@@ -140,6 +146,7 @@ export async function assignRoom(
   room.roundTime = options.roundTime;
 
   await saveRoom(room);
+  console.log(`Room assigned: ${room.code} (host: ${hostId}, status: ${room.status})`);
   return room;
 }
 
@@ -258,6 +265,11 @@ export async function addPlayerToRoom(
   const room = await getRoom(roomCode);
   if (!room) return null;
 
+  // Prevent joining if room is full
+  if (room.maxPlayers > 0 && room.players.length >= room.maxPlayers) {
+    return null;
+  }
+
   const now = Date.now();
   // Enforce max 8 character username
   const sanitizedUsername = String(username ?? "").trim().slice(0, MAX_USERNAME_LENGTH) || "Guest";
@@ -339,6 +351,11 @@ export async function checkIdlePlayersInRoom(
 ): Promise<{ idleSockets: string[]; newHostId?: string }> {
   const room = await getRoom(roomCode);
   if (!room) return { idleSockets: [] };
+
+  // Only check for idle players if the game is ongoing
+  if (room.status !== "active") {
+    return { idleSockets: [] };
+  }
 
   const now = Date.now();
   const idleSockets: string[] = [];
