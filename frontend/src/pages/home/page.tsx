@@ -270,14 +270,29 @@ const styles = `
     opacity: 0.5;
   }
 
-  /* ── User count badge on input ── */
-  .input-wrapper { position: relative; }
-`
+  .success-badge {
+    margin-top: 12px;
+    padding: 12px;
+    background: #e8f5e9;
+    border: 2px solid var(--green);
+    border-radius: 8px;
+    text-align: center;
+    font-weight: 700;
+    color: #1b5e20;
+  }
 
-import { useSocket } from "../../hooks/useSocket";
-import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { ROOM_CONSTRAINTS, createRoom, onRoomCreated, joinRoomByCode } from "../../utils";
+  .error-msg {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #ffeaea;
+    border: 2px solid var(--red);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--red);
+    text-align: center;
+  }
+`;
 
 const Home = () => {
   const socket    = useSocket();
@@ -291,11 +306,16 @@ const Home = () => {
   const [socketReady,setSocketReady] = useState(false);
 
   const [createUsername, setCreateUsername] = useState("");
-  
-  // Join room state
-  const [joinUsername, setJoinUsername] = useState("");
-  const [joinRoomCode, setJoinRoomCode] = useState("");
-  const [isJoining, setIsJoining] = useState(false);
+  const [joinUsername,   setJoinUsername  ] = useState("");
+  const [joinRoomCode,   setJoinRoomCode  ] = useState("");
+  const [isJoining,      setIsJoining     ] = useState(false);
+  const [joinError,      setJoinError     ] = useState("");
+
+  // Auto-fill username from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("playerUsername");
+    if (saved) { setCreateUsername(saved); setJoinUsername(saved); }
+  }, []);
 
   useEffect(() => {
     if (!socket) { setSocketReady(false); return; }
@@ -313,16 +333,9 @@ const Home = () => {
   }, [socket, navigate]);
 
   const handleCreateRoom = async () => {
-    if (!socket) {
-      alert("Still connecting to server... please wait");
-      return;
-    }
-
-    if (!createUsername.trim()) {
-      alert("Please enter a username");
-      return;
-    }
-    
+    if (!socket) { setCreateError("Still connecting… please wait."); return; }
+    if (!createUsername.trim()) { setCreateError("Please enter a username."); return; }
+    setCreateError("");
     setIsCreating(true);
 
     const result = await createRoom(socket, {
@@ -333,7 +346,7 @@ const Home = () => {
     });
 
     if (!result.success) {
-      alert("Failed to create room: " + result.error);
+      setCreateError(result.error ?? "Failed to create room.");
       setIsCreating(false);
     } else {
       localStorage.setItem("playerUsername", createUsername.trim());
@@ -341,33 +354,11 @@ const Home = () => {
     }
   };
 
-  const handleCopyRoomCode = async () => {
-    if (!roomCode) return;
-    try {
-      await navigator.clipboard.writeText(roomCode);
-      // Copy successful, will navigate shortly
-    } catch (err) {
-      setAlertMessage("Failed to copy room code");
-      setAlertOpen(true);
-    }
-  };
-
   const handleJoinRoom = async () => {
-    if (!socket) {
-      alert("Still connecting to server... please wait");
-      return;
-    }
-
-    if (!joinRoomCode.trim()) {
-      alert("Please enter a room code");
-      return;
-    }
-
-    if (!joinUsername.trim()) {
-      alert("Please enter a username");
-      return;
-    }
-
+    if (!socket) { setJoinError("Still connecting… please wait."); return; }
+    if (!joinRoomCode.trim()) { setJoinError("Please enter a room code."); return; }
+    if (!joinUsername.trim()) { setJoinError("Please enter a username."); return; }
+    setJoinError("");
     setIsJoining(true);
 
     const result = await joinRoomByCode(socket, joinRoomCode.toUpperCase().trim(), joinUsername.trim());
@@ -377,7 +368,7 @@ const Home = () => {
       sessionStorage.setItem(`room_join_${joinRoomCode.toUpperCase().trim()}`, Date.now().toString());
       navigate(`/${joinRoomCode.toUpperCase().trim()}`);
     } else {
-      alert("Failed to join room: " + result.error);
+      setJoinError(result.error ?? "Failed to join room.");
       setIsJoining(false);
     }
   };
@@ -506,45 +497,6 @@ const Home = () => {
           </Tabs.Root>
         </div>
       </div>
-      
-      {/* Alert Modal */}
-      <Dialog open={alertOpen} onOpenChange={setAlertOpen}>
-        <DialogContent className="sm:max-w-md border-2 border-ink rounded-lg shadow-lg" style={{ background: "linear-gradient(135deg, #fdf6e3 0%, #fffdf4 100%)" }}>
-          <DialogHeader>
-            <DialogTitle style={{ color: "#1a1a2e", fontSize: "1.5rem", fontWeight: "800" }}>📬 Notice</DialogTitle>
-          </DialogHeader>
-          <div style={{
-            padding: "12px",
-            background: "rgba(58, 144, 217, 0.08)",
-            border: "2px solid #4a90d9",
-            borderRadius: "8px",
-            color: "#1a1a2e",
-            fontSize: "0.95rem",
-            lineHeight: "1.6",
-            fontWeight: "500",
-          }}>
-            {alertMessage}
-          </div>
-          <div className="flex gap-3 justify-end mt-6">
-            <Button
-              onClick={() => setAlertOpen(false)}
-              className="w-full"
-              style={{
-                background: "linear-gradient(135deg, #3db870 0%, #2a9a57 100%)",
-                color: "white",
-                fontWeight: "700",
-                padding: "10px",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
-                fontSize: "1rem",
-              }}
-            >
-              ✓ Got it!
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </>
   );
 };
