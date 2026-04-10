@@ -3,54 +3,80 @@ import { io, Socket } from "socket.io-client";
 
 let globalSocket: Socket | null = null;
 
-export function useSocket() {
+/** Generate or retrieve a persistent localStorage UUID for this browser */
+function getOrCreateUserId(): string {
+  const key = "sketchy_user_id";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
+
+/** Simple device fingerprint: hashed combo of UA + timezone + language */
+function getFingerprint(): string {
+  const raw = [
+    navigator.userAgent,
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    navigator.language,
+  ].join("|");
+  // Cheap, non-crypto hash (we just need a stable string)
+  let h = 0;
+  for (let i = 0; i < raw.length; i++) {
+    h = (Math.imul(31, h) + raw.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h).toString(36);
+}
+
+export function useSocket(): Socket | null {
   const socketRef = useRef<Socket | null>(null);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // If socket already exists, mark as ready
     if (globalSocket) {
       socketRef.current = globalSocket;
-      setIsReady(true);
+      if (globalSocket.connected) setIsReady(true);
       return;
     }
 
-    const backendUrl =
-      import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
     console.log("Connecting to backend:", backendUrl);
-    
+
     const newSocket = io(backendUrl, {
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
+      auth: {
+        userId: getOrCreateUserId(),
+        fingerprint: getFingerprint(),
+      },
     });
 
     socketRef.current = newSocket;
     globalSocket = newSocket;
 
     newSocket.on("connect", () => {
-      console.log("✓ Connected to server:", newSocket.id);
+      console.log("✓ Connected:", newSocket.id);
       setIsReady(true);
     });
 
-    newSocket.on("connect_error", (error) => {
-      console.error("✗ Connection error:", error);
+    newSocket.on("connect_error", (err) => {
+      console.error("✗ Connection error:", err.message);
       setIsReady(false);
     });
 
     newSocket.on("disconnect", () => {
-      console.log("✗ Disconnected from server");
+      console.log("✗ Disconnected");
       setIsReady(false);
     });
 
     return () => {
-      // Don't disconnect socket on unmount - keep it alive
+      // Keep socket alive across route changes
     };
   }, []);
 
-  // Return socket only when ready, null otherwise
   return isReady ? socketRef.current : null;
 }
-
