@@ -1,10 +1,6 @@
 /**
- * Front-end game configuration.
- *
- * These values mirror the backend GAME_CONFIG so the UI can show timers
- * and countdowns without waiting for a server push.
- * When the backend starts sending config over the socket, replace the
- * constants below with values from the store instead.
+ * Front-end game configuration — mirrors backend GAME_CONFIG.
+ * Replace with server-pushed values once the backend sends them over the socket.
  */
 export const GAME_CONFIG = {
   /** Seconds the overlay shows after a round ends before auto-closing */
@@ -19,9 +15,9 @@ export const GAME_CONFIG = {
   /** Max letters revealed as hints */
   MAX_HINT_REVEALS: 2,
 
-  /** Total rounds (for display only — server is authoritative) */
+  /** Total rounds (display only — server is authoritative) */
   MAX_ROUNDS: 3,
 
-  /** Seconds per round (for display only) */
+  /** Seconds per round (display only) */
   ROUND_TIME: 80,
 } as const;

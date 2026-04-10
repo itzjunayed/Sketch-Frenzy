@@ -1,7 +1,7 @@
 /**
  * Central game configuration.
- * All values here can be overridden via environment variables or a future
- * admin API — never hard-code these numbers elsewhere in the codebase.
+ * All values here can be overridden via environment variables.
+ * Never hard-code these numbers elsewhere in the codebase.
  */
 export const GAME_CONFIG = {
   /** Total rounds before the game ends */

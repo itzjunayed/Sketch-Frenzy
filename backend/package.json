@@ -13,16 +13,19 @@
   "description": "",
   "dependencies": {
     "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
     "express": "^5.2.1",
+    "pg": "^8.20.0",
     "redis": "^5.11.0",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.5",
+    "@types/pg": "^8.20.0",
+    "@types/redis": "^4.0.11",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "@types/redis": "^4.0.11"
+    "typescript": "^5.9.3"
   }
 }

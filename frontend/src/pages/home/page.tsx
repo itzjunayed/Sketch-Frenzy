@@ -1,7 +1,10 @@
-import { Tabs } from "radix-ui"
+import { Tabs } from "radix-ui";
+import { useSocket } from "../../hooks/useSocket";
+import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { ROOM_CONSTRAINTS, createRoom, onRoomCreated, joinRoomByCode } from "../../utils";
 import background from "../../assets/bg.png"
 
-// Inline all styles to keep it self-contained
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap');
 
@@ -15,7 +18,6 @@ const styles = `
     --red: #e85555;
     --blue: #4a90d9;
     --cream: #fdf6e3;
-    --line: #1a1a2e;
   }
 
   * { box-sizing: border-box; }
@@ -35,7 +37,6 @@ const styles = `
     overflow: hidden;
   }
 
-  /* Doodle decorations */
   .sketchy-page::before {
     content: '✏️ 🎨 ✏️ 🖌️ ✏️ 🎨 ✏️ 🖌️ ✏️ 🎨 ✏️ 🖌️';
     position: absolute;
@@ -47,6 +48,7 @@ const styles = `
     letter-spacing: 8px;
     pointer-events: none;
   }
+
   .sketchy-page::after {
     content: '✏️ 🎨 ✏️ 🖌️ ✏️ 🎨 ✏️ 🖌️ ✏️ 🎨 ✏️ 🖌️';
     position: absolute;
@@ -59,7 +61,6 @@ const styles = `
     pointer-events: none;
   }
 
-  /* ── Title ── */
   .sketchy-title {
     font-family: 'Fredoka One', cursive;
     font-size: clamp(2.8rem, 8vw, 4.5rem);
@@ -95,7 +96,6 @@ const styles = `
     50% { transform: rotate(1deg) scale(1.02); }
   }
 
-  /* ── Card ── */
   .sketchy-card {
     width: 100%;
     max-width: 380px;
@@ -104,9 +104,7 @@ const styles = `
     border-radius: 12px;
     padding: 28px 28px 24px;
     position: relative;
-    box-shadow:
-      5px 5px 0 var(--ink),
-      8px 8px 0 rgba(26,26,46,0.15);
+    box-shadow: 5px 5px 0 var(--ink), 8px 8px 0 rgba(26,26,46,0.15);
     animation: cardIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
   }
 
@@ -115,7 +113,6 @@ const styles = `
     to   { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
   }
 
-  /* Corner doodle stars */
   .sketchy-card::before {
     content: '★';
     position: absolute;
@@ -126,6 +123,7 @@ const styles = `
     transform: rotate(-20deg);
     line-height: 1;
   }
+
   .sketchy-card::after {
     content: '★';
     position: absolute;
@@ -137,19 +135,24 @@ const styles = `
     line-height: 1;
   }
 
-  /* ── Username ── */
-  .username-label {
-    font-weight: 800;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    color: var(--ink);
-    margin-bottom: 6px;
+  .form-row {
     display: flex;
-    align-items: center;
-    gap: 6px;
+    flex-direction: column;
+    margin-bottom: 12px;
+    border: none;
+    padding: 0;
   }
-  .username-label::before { content: '👤'; font-size: 14px; }
+
+  .form-label {
+    font-weight: 800;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--ink);
+    margin-bottom: 5px;
+  }
+
+  .form-label-icon { margin-right: 5px; }
 
   .sketchy-input {
     width: 100%;
@@ -165,6 +168,7 @@ const styles = `
     transition: box-shadow 0.15s, transform 0.15s;
     color: var(--ink);
   }
+
   .sketchy-input::placeholder { color: #bba; font-weight: 600; }
   .sketchy-input:focus {
     box-shadow: 4px 4px 0 var(--gold-dark);
@@ -172,7 +176,6 @@ const styles = `
     border-color: var(--gold-dark);
   }
 
-  /* ── Tabs ── */
   .tabs-list {
     display: flex;
     margin: 20px 0 18px;
@@ -193,44 +196,27 @@ const styles = `
     border-right: 2.5px solid var(--ink);
     cursor: pointer;
     color: #888;
-    transition: background 0.15s, color 0.15s, transform 0.1s;
-    position: relative;
+    transition: background 0.15s, color 0.15s;
     outline: none;
   }
+
   .tab-trigger:last-child { border-right: none; }
   .tab-trigger:hover { background: #f5edcf; color: var(--ink); }
-  .tab-trigger[data-state='active'] {
-    background: var(--gold);
-    color: var(--ink);
-    font-weight: normal; /* Fredoka One handles weight */
+  .tab-trigger[data-state='active'] { background: var(--gold); color: var(--ink); }
+
+  .tab-content[data-state='active'] {
+    animation: tabSlideIn 0.2s ease both;
   }
-  .tab-trigger[data-state='active']::after {
-    content: '';
-    position: absolute;
-    bottom: -1px; left: 15%; right: 15%;
-    height: 3px;
-    background: var(--ink);
-    border-radius: 2px;
+  @keyframes tabSlideIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
-  /* ── Form rows ── */
-  .form-row {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 12px;
-  }
-
-  .form-label {
-    font-weight: 800;
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    color: var(--ink);
-    margin-bottom: 5px;
-  }
-
-  .form-label-icon {
-    margin-right: 5px;
+  .settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 4px;
   }
 
   select.sketchy-input {
@@ -242,7 +228,6 @@ const styles = `
     cursor: pointer;
   }
 
-  /* ── Buttons ── */
   .btn-primary {
     width: 100%;
     margin-top: 6px;
@@ -257,7 +242,6 @@ const styles = `
     cursor: pointer;
     box-shadow: 4px 4px 0 var(--ink);
     transition: box-shadow 0.12s, transform 0.12s, background 0.12s;
-    position: relative;
     outline: none;
     display: flex;
     align-items: center;
@@ -265,48 +249,11 @@ const styles = `
     gap: 8px;
     text-shadow: 1px 1px 0 rgba(0,0,0,0.3);
   }
-  .btn-primary:hover {
-    background: var(--green-dark);
-    box-shadow: 5px 5px 0 var(--ink);
-    transform: translate(-1px, -1px);
-  }
-  .btn-primary:active {
-    box-shadow: 2px 2px 0 var(--ink);
-    transform: translate(2px, 2px);
-  }
 
-  /* ── Settings grid for 2-col layout ── */
-  .settings-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 4px;
-  }
+  .btn-primary:hover:not(:disabled) { background: var(--green-dark); box-shadow: 5px 5px 0 var(--ink); transform: translate(-1px, -1px); }
+  .btn-primary:active:not(:disabled) { box-shadow: 2px 2px 0 var(--ink); transform: translate(2px, 2px); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  /* ── Divider ── */
-  .sketchy-divider {
-    width: 100%;
-    height: 2.5px;
-    background: repeating-linear-gradient(
-      90deg,
-      var(--ink) 0, var(--ink) 6px,
-      transparent 6px, transparent 10px
-    );
-    border-radius: 2px;
-    margin: 4px 0 14px;
-    opacity: 0.25;
-  }
-
-  /* ── Tab content animation ── */
-  .tab-content[data-state='active'] {
-    animation: tabSlideIn 0.2s ease both;
-  }
-  @keyframes tabSlideIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ── Room code input variant ── */
   .room-code-input {
     font-family: 'Fredoka One', cursive;
     font-size: 1.4rem;
@@ -314,6 +261,7 @@ const styles = `
     text-align: center;
     text-transform: uppercase;
   }
+
   .room-code-input::placeholder {
     letter-spacing: 4px;
     font-size: 1rem;
@@ -329,44 +277,36 @@ const styles = `
 import { useSocket } from "../../hooks/useSocket";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/dialog";
-import { Button } from "../../components/ui/button";
 import { ROOM_CONSTRAINTS, createRoom, onRoomCreated, joinRoomByCode } from "../../utils";
 
 const Home = () => {
-  const socket = useSocket();
-  const navigate = useNavigate();
+  const socket    = useSocket();
+  const navigate  = useNavigate();
+
   const [maxPlayers, setMaxPlayers] = useState(ROOM_CONSTRAINTS.maxPlayers.default);
-  const [rounds, setRounds] = useState(ROOM_CONSTRAINTS.rounds.default);
-  const [roundTime, setRoundTime] = useState(ROOM_CONSTRAINTS.roundTime.default);
+  const [rounds,     setRounds    ] = useState(ROOM_CONSTRAINTS.rounds.default);
+  const [roundTime,  setRoundTime ] = useState(ROOM_CONSTRAINTS.roundTime.default);
   const [isCreating, setIsCreating] = useState(false);
-  const [roomCode, setRoomCode] = useState<string | null>(null);
-  const [socketReady, setSocketReady] = useState(false);
-  
-  // Create room username
+  const [createError,setCreateError] = useState("");
+  const [socketReady,setSocketReady] = useState(false);
+
   const [createUsername, setCreateUsername] = useState("");
   
   // Join room state
   const [joinUsername, setJoinUsername] = useState("");
   const [joinRoomCode, setJoinRoomCode] = useState("");
   const [isJoining, setIsJoining] = useState(false);
-  
-  // Alert modal state
-  const [alertMessage, setAlertMessage] = useState("");
-  const [alertOpen, setAlertOpen] = useState(false);
 
   useEffect(() => {
-    if (!socket) {
-      setSocketReady(false);
-      return;
-    }
-    
+    if (!socket) { setSocketReady(false); return; }
     setSocketReady(true);
+
     const cleanup = onRoomCreated(socket, (code: string) => {
-      setRoomCode(code);
       setIsCreating(false);
-      // Navigate to canvas with room code as path param
-      setTimeout(() => navigate(`/${code}`), 500);
+      // Token tells canvas page that join was already emitted here —
+      // skip the duplicate joinRoomByCode on its handleConnect.
+      sessionStorage.setItem(`room_join_${code}`, Date.now().toString());
+      navigate(`/${code}`);
     });
 
     return cleanup;
@@ -374,32 +314,30 @@ const Home = () => {
 
   const handleCreateRoom = async () => {
     if (!socket) {
-      setAlertMessage("Still connecting to server... please wait");
-      setAlertOpen(true);
+      alert("Still connecting to server... please wait");
       return;
     }
 
     if (!createUsername.trim()) {
-      setAlertMessage("Please enter a username");
-      setAlertOpen(true);
+      alert("Please enter a username");
       return;
     }
     
     setIsCreating(true);
+
     const result = await createRoom(socket, {
       maxPlayers,
       rounds,
       roundTime,
-      username: createUsername,
+      username: createUsername.trim(),
     });
 
     if (!result.success) {
-      setAlertMessage("Failed to create room: " + result.error);
-      setAlertOpen(true);
+      alert("Failed to create room: " + result.error);
       setIsCreating(false);
     } else {
-      // Store username for use in canvas
-      localStorage.setItem("playerUsername", createUsername);
+      localStorage.setItem("playerUsername", createUsername.trim());
+      // Navigation handled by onRoomCreated listener above
     }
   };
 
@@ -416,34 +354,30 @@ const Home = () => {
 
   const handleJoinRoom = async () => {
     if (!socket) {
-      setAlertMessage("Still connecting to server... please wait");
-      setAlertOpen(true);
+      alert("Still connecting to server... please wait");
       return;
     }
 
     if (!joinRoomCode.trim()) {
-      setAlertMessage("Please enter a room code");
-      setAlertOpen(true);
+      alert("Please enter a room code");
       return;
     }
 
     if (!joinUsername.trim()) {
-      setAlertMessage("Please enter a username");
-      setAlertOpen(true);
+      alert("Please enter a username");
       return;
     }
 
     setIsJoining(true);
-    const result = await joinRoomByCode(socket, joinRoomCode.toUpperCase(), joinUsername);
+
+    const result = await joinRoomByCode(socket, joinRoomCode.toUpperCase().trim(), joinUsername.trim());
 
     if (result.success) {
-      // Store username for use in canvas
-      localStorage.setItem("playerUsername", joinUsername);
-      // Navigate to canvas with room code as path param
-      setTimeout(() => navigate(`/${joinRoomCode.toUpperCase()}`), 300);
+      localStorage.setItem("playerUsername", joinUsername.trim());
+      sessionStorage.setItem(`room_join_${joinRoomCode.toUpperCase().trim()}`, Date.now().toString());
+      navigate(`/${joinRoomCode.toUpperCase().trim()}`);
     } else {
-      setAlertMessage("Failed to join room: " + result.error);
-      setAlertOpen(true);
+      alert("Failed to join room: " + result.error);
       setIsJoining(false);
     }
   };
@@ -459,28 +393,19 @@ const Home = () => {
         <p className="sketchy-subtitle">🖍 Draw • Guess • Win 🏆</p>
 
         <div className="sketchy-card">
-          {/* TABS */}
           <Tabs.Root defaultValue="create">
             <Tabs.List className="tabs-list">
-              <Tabs.Trigger value="create" className="tab-trigger">
-                🏠 Create Room
-              </Tabs.Trigger>
-              <Tabs.Trigger value="join" className="tab-trigger">
-                🚪 Join Room
-              </Tabs.Trigger>
+              <Tabs.Trigger value="create" className="tab-trigger">🏠 Create Room</Tabs.Trigger>
+              <Tabs.Trigger value="join"   className="tab-trigger">🚪 Join Room</Tabs.Trigger>
             </Tabs.List>
 
-            {/* CREATE ROOM */}
+            {/* ── Create Room ── */}
             <Tabs.Content value="create" className="tab-content">
               <fieldset className="form-row">
-                <label className="form-label">
-                  <span className="form-label-icon">👤</span>Your Username
-                </label>
+                <label className="form-label"><span className="form-label-icon">👤</span>Your Username</label>
                 <input
-                  type="text"
-                  placeholder="Enter your name"
-                  maxLength={8}
-                  value={createUsername}
+                  type="text" placeholder="Enter your name (max 8 chars)"
+                  maxLength={8} value={createUsername}
                   onChange={(e) => setCreateUsername(e.target.value)}
                   className="sketchy-input"
                 />
@@ -488,9 +413,7 @@ const Home = () => {
 
               <div className="settings-grid">
                 <fieldset className="form-row" style={{ margin: 0 }}>
-                  <label className="form-label">
-                    <span className="form-label-icon">👥</span>Max Players
-                  </label>
+                  <label className="form-label"><span className="form-label-icon">👥</span>Max Players</label>
                   <input
                     type="number"
                     min={ROOM_CONSTRAINTS.maxPlayers.min}
@@ -502,9 +425,7 @@ const Home = () => {
                 </fieldset>
 
                 <fieldset className="form-row" style={{ margin: 0 }}>
-                  <label className="form-label">
-                    <span className="form-label-icon">🔄</span>Rounds
-                  </label>
+                  <label className="form-label"><span className="form-label-icon">🔄</span>Rounds</label>
                   <input
                     type="number"
                     min={ROOM_CONSTRAINTS.rounds.min}
@@ -516,24 +437,22 @@ const Home = () => {
                 </fieldset>
               </div>
 
-              <div className="settings-grid" style={{ marginTop: 10 }}>
-                <fieldset className="form-row" style={{ margin: 0 }}>
-                  <label className="form-label">
-                    <span className="form-label-icon">⏱</span>Round Time
-                  </label>
+              <div style={{ marginTop: 10 }}>
+                <fieldset className="form-row">
+                  <label className="form-label"><span className="form-label-icon">⏱</span>Round Time</label>
                   <select
                     value={roundTime}
                     onChange={(e) => setRoundTime(Number(e.target.value))}
                     className="sketchy-input"
                   >
-                    {ROOM_CONSTRAINTS.roundTime.options.map((time) => (
-                      <option key={time} value={time}>
-                        {time} sec
-                      </option>
+                    {ROOM_CONSTRAINTS.roundTime.options.map((t) => (
+                      <option key={t} value={t}>{t} sec</option>
                     ))}
                   </select>
                 </fieldset>
               </div>
+
+              {createError && <div className="error-msg">{createError}</div>}
 
               <button
                 className="btn-primary"
@@ -541,74 +460,46 @@ const Home = () => {
                 onClick={handleCreateRoom}
                 disabled={isCreating || !socketReady}
               >
-                {isCreating ? "Creating..." : socketReady ? "✨ Create Room" : "🔌 Connecting..."}
+                {isCreating ? "Creating…" : socketReady ? "✨ Create Room" : "🔌 Connecting…"}
               </button>
-              {roomCode && (
-                <div style={{
-                  marginTop: 12,
-                  padding: "12px",
-                  background: "#e8f5e9",
-                  border: "2px solid #3db870",
-                  borderRadius: "8px",
-                  textAlign: "center",
-                  fontWeight: 700,
-                  color: "#1b5e20",
-                }}
-                >
-                  Room Code: <span style={{ fontSize: "1.2rem", letterSpacing: "2px" }}>{roomCode}</span>
-                </div>
-              )}
             </Tabs.Content>
 
-            {/* JOIN ROOM */}
+            {/* ── Join Room ── */}
             <Tabs.Content value="join" className="tab-content">
-              <div style={{ padding: '10px 0 4px' }}>
-                <p style={{
-                  fontSize: '0.8rem',
-                  fontWeight: 700,
-                  color: '#888',
-                  textAlign: 'center',
-                  marginBottom: 16,
-                  letterSpacing: 1,
-                }}>
+              <div style={{ padding: "10px 0 4px" }}>
+                <p style={{ fontSize: "0.8rem", fontWeight: 700, color: "#888", textAlign: "center", marginBottom: 16, letterSpacing: 1 }}>
                   Got a code? Hop right in! 🎉
                 </p>
-                
+
                 <fieldset className="form-row">
-                  <label className="form-label">
-                    <span className="form-label-icon">👤</span>Username
-                  </label>
+                  <label className="form-label"><span className="form-label-icon">👤</span>Username</label>
                   <input
-                    type="text"
-                    placeholder="Enter your name"
-                    maxLength={8}
-                    value={joinUsername}
+                    type="text" placeholder="Enter your name (max 8 chars)"
+                    maxLength={8} value={joinUsername}
                     onChange={(e) => setJoinUsername(e.target.value)}
                     className="sketchy-input"
                   />
                 </fieldset>
 
                 <fieldset className="form-row">
-                  <label className="form-label">
-                    <span className="form-label-icon">🔑</span>Room Code
-                  </label>
+                  <label className="form-label"><span className="form-label-icon">🔑</span>Room Code</label>
                   <input
-                    type="text"
-                    placeholder="e.g. ABC123"
-                    maxLength={8}
-                    value={joinRoomCode}
+                    type="text" placeholder="e.g. ABCD1234"
+                    maxLength={8} value={joinRoomCode}
                     onChange={(e) => setJoinRoomCode(e.target.value.toUpperCase())}
                     className="sketchy-input room-code-input"
                   />
                 </fieldset>
 
-                <button 
-                  className="btn-primary" 
-                  style={{ marginTop: 8 }} 
+                {joinError && <div className="error-msg">{joinError}</div>}
+
+                <button
+                  className="btn-primary"
+                  style={{ marginTop: 8 }}
                   onClick={handleJoinRoom}
                   disabled={isJoining || !socketReady}
                 >
-                  {isJoining ? "Joining..." : socketReady ? "🚀 Join Room" : "🔌 Connecting..."}
+                  {isJoining ? "Joining…" : socketReady ? "🚀 Join Room" : "🔌 Connecting…"}
                 </button>
               </div>
             </Tabs.Content>
@@ -655,7 +546,7 @@ const Home = () => {
         </DialogContent>
       </Dialog>
     </>
-  )
-}
+  );
+};
 
-export default Home
+export default Home;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Socket } from "socket.io-client";
 import {
   Paintbrush, Droplet, RotateCcw, Trash2,
-  Send, Eraser,
+  Send, Eraser, Copy,
 } from "lucide-react";
 import { useDrawingStore, COLORS } from "@/store/drawingStore";
 import { GAME_CONFIG } from "@/config/gameConfig";
@@ -769,6 +769,167 @@ const GAME_STYLES = `
   .gf-username-btn:hover  { background: var(--green-dark); transform: translate(-1px,-1px); box-shadow: 5px 5px 0 var(--ink); }
   .gf-username-btn:active { transform: translate(2px,2px); box-shadow: 2px 2px 0 var(--ink); }
   .gf-username-btn:disabled { opacity: .5; cursor: not-allowed; transform: none !important; }
+
+  .gf-game-end-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(26, 26, 46, 0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+    padding: 24px;
+    animation: geIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+  }
+ 
+  @keyframes geIn {
+    from { opacity: 0; transform: scale(0.92); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+ 
+  .gf-game-end-title {
+    font-family: 'Fredoka One', cursive;
+    font-size: 2rem;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 var(--ink);
+    margin-bottom: 4px;
+    letter-spacing: 1px;
+  }
+ 
+  .gf-game-end-subtitle {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 18px;
+  }
+ 
+  .gf-game-end-scores {
+    width: 100%;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+ 
+  .gf-game-end-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255,253,244,0.08);
+    border: 1.5px solid rgba(255,253,244,0.15);
+    border-radius: 8px;
+    padding: 8px 12px;
+    transition: background 0.15s;
+  }
+ 
+  .gf-game-end-row.winner {
+    background: rgba(227,182,93,0.18);
+    border-color: var(--gold);
+  }
+ 
+  .gf-game-end-rank {
+    font-size: 1.1rem;
+    min-width: 28px;
+    text-align: center;
+  }
+ 
+  .gf-game-end-name {
+    flex: 1;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #f0ebe0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+ 
+  .gf-game-end-pts {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1rem;
+    color: var(--gold);
+    white-space: nowrap;
+  }
+ 
+  .gf-game-end-restart {
+    margin-top: 4px;
+    padding: 12px 28px;
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.1rem;
+    letter-spacing: 1px;
+    background: var(--green);
+    color: #fff;
+    border: 2.5px solid #fff;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 4px 0 var(--green-dark);
+    transition: box-shadow 0.1s, transform 0.1s;
+    outline: none;
+  }
+ 
+  .gf-game-end-restart:hover {
+    background: var(--green-dark);
+    box-shadow: 0 6px 0 #1e7a3f;
+    transform: translateY(-2px);
+  }
+ 
+  .gf-game-end-restart:active {
+    box-shadow: 0 2px 0 var(--green-dark);
+    transform: translateY(2px);
+  }
+ 
+  .gf-game-end-waiting {
+    margin-top: 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #888;
+    letter-spacing: 1px;
+    text-align: center;
+  }
+
+  .gf-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    font-family: 'Fredoka One', cursive;
+    font-size: 0.78rem;
+    font-weight: 700;
+    background: var(--cream);
+    color: var(--ink);
+    border: 2px solid var(--ink);
+    border-radius: 6px;
+    cursor: pointer;
+    box-shadow: 2px 2px 0 var(--ink);
+    transition: box-shadow .1s, transform .1s, background .1s;
+    white-space: nowrap;
+    flex-shrink: 0;
+    outline: none;
+    letter-spacing: .5px;
+  }
+ 
+  .gf-copy-btn:hover {
+    background: #f5edcf;
+    box-shadow: 3px 3px 0 var(--ink);
+    transform: translate(-1px, -1px);
+  }
+ 
+  .gf-copy-btn:active {
+    box-shadow: 1px 1px 0 var(--ink);
+    transform: translate(1px, 1px);
+  }
+ 
+  .gf-copy-btn.copied {
+    background: #e8f5e9;
+    border-color: #2a9a57;
+    color: #2a9a57;
+    box-shadow: 2px 2px 0 #2a9a57;
+  }
 `;
 
 // ─── Hint helpers ─────────────────────────────────────────────────────────────
@@ -824,6 +985,14 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
     roundScoreDelta, maxPlayers,
   } = useDrawingStore();
 
+  const copyRoomLink = () => {
+    const url = `${window.location.origin}/${roomCode}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   // ── Username ────────────────────────────────────────────────────────────────
   const showUsernameOverlay = !username;
 
@@ -832,7 +1001,7 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
     if (!name) return;
     setUsername(name);
     localStorage.setItem("playerUsername", name);
-    if (socket) socket.emit("joinGame", { username: name });
+    if (socket) socket.emit("joinGame", { username: name, roomCode });
   };
 
   useEffect(() => {
@@ -842,7 +1011,7 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
 
   useEffect(() => {
     if (!socket || !username) return;
-    if (socket.connected) socket.emit("joinGame", { username });
+    if (socket.connected) socket.emit("joinGame", { username, roomCode });
   }, [socket, username]);
 
   // ── Round-end overlay timer ─────────────────────────────────────────────────
@@ -1231,48 +1400,31 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
           </div>
 
           {roomCode && (
-            <div style={{
-              background: 'var(--cream)',
-              border: '2.5px solid var(--ink)',
-              borderRadius: '8px',
-              padding: '6px 14px',
-              fontFamily: "'Fredoka One', cursive",
-              fontSize: '0.9rem',
-              fontWeight: 700,
-              color: 'var(--ink)',
-              boxShadow: '3px 3px 0 var(--ink)',
-              letterSpacing: '1px',
-              minWidth: 'fit-content',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}>
-              🔑 {roomCode}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <div style={{
+                background: 'var(--cream)',
+                border: '2.5px solid var(--ink)',
+                borderRadius: '8px',
+                padding: '6px 14px',
+                fontFamily: "'Fredoka One', cursive",
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                color: 'var(--ink)',
+                boxShadow: '3px 3px 0 var(--ink)',
+                letterSpacing: '1px',
+                whiteSpace: 'nowrap',
+              }}>
+                🔑 {roomCode}
+              </div>
               <button
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(roomCode);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  } catch (err) {
-                    console.error('Failed to copy:', err);
-                  }
-                }}
-                style={{
-                  padding: '4px 8px',
-                  background: copied ? 'var(--green)' : 'var(--gold)',
-                  color: 'var(--ink)',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '0.8rem',
-                  fontWeight: '600',
-                  transition: 'all 0.3s',
-                  minWidth: 'fit-content',
-                }}
-                title="Copy room code"
+                className={`gf-copy-btn${copied ? ' copied' : ''}`}
+                onClick={copyRoomLink}
+                title="Copy room link to clipboard"
               >
-                {copied ? '✓ Copied!' : '📋 Copy'}
+                {copied
+                  ? <>✓ Copied!</>
+                  : <><Copy size={12} /> Share</>
+                }
               </button>
             </div>
           )}
@@ -1521,11 +1673,44 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
                 </div>
               )}
               {gamePhase === "gameEnd" && (
-                <div className="gf-canvas-overlay">
-                  <div className="gf-overlay-text">
-                    🏆 Game Over!<br/>
-                    <span style={{ fontSize:"1rem" }}>Check the scores!</span>
+                <div className="gf-game-end-overlay">
+                  <div className="gf-game-end-title">🏆 Game Over!</div>
+                  <div className="gf-game-end-subtitle">Final Scores</div>
+              
+                  <div className="gf-game-end-scores">
+                    {sortedPlayers.map((p, i) => (
+                      <div
+                        key={p.id}
+                        className={`gf-game-end-row${i === 0 ? " winner" : ""}`}
+                      >
+                        <div className="gf-game-end-rank">
+                          {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
+                        </div>
+                        <div className="gf-game-end-name">
+                          {p.username}
+                          {i === 0 && (
+                            <span style={{ fontSize: "0.7rem", marginLeft: 6, color: "var(--gold)" }}>
+                              winner!
+                            </span>
+                          )}
+                        </div>
+                        <div className="gf-game-end-pts">{p.score} pts</div>
+                      </div>
+                    ))}
                   </div>
+              
+                  {socketId === hostId ? (
+                    <button
+                      className="gf-game-end-restart"
+                      onClick={() => socket?.emit("restartGame")}
+                    >
+                      🔄 Play Again
+                    </button>
+                  ) : (
+                    <div className="gf-game-end-waiting">
+                      Waiting for host to restart…
+                    </div>
+                  )}
                 </div>
               )}
 
