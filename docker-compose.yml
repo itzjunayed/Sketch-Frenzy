@@ -39,8 +39,8 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_BACKEND_URL=http://backend:5000
-      - VITE_SOCKET_URL=http://backend:5000
+      - VITE_BACKEND_URL=http://localhost:5000
+      - VITE_SOCKET_URL=http://localhost:5000
     depends_on:
       backend:
         condition: service_healthy
