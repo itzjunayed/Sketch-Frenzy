@@ -5,21 +5,25 @@ services:
       dockerfile: Dockerfile
     container_name: sketch-frenzy-backend
     ports:
-      - "3001:3001"
+      - "5000:5000"
     volumes:
       - ./backend:/app
       - /app/node_modules
     environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/sketchfrenzy
       - NODE_ENV=development
-      - PORT=3001
+      - PORT=5000
       - REDIS_URL=redis://redis:6379
-      - CLIENT_URL=http://localhost:5173
+      - FRONTEND_URL=http://localhost:5173
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - sketch-frenzy-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/api/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -35,8 +39,8 @@ services:
       - ./frontend:/app
       - /app/node_modules
     environment:
-      - VITE_BACKEND_URL=http://backend:3001
-      - VITE_SOCKET_URL=http://backend:3001
+      - VITE_BACKEND_URL=http://backend:5000
+      - VITE_SOCKET_URL=http://backend:5000
     depends_on:
       backend:
         condition: service_healthy
@@ -64,6 +68,26 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  
+  postgres:
+    image: postgres:15-alpine
+    container_name: sketch-frenzy-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: sketchfrenzy
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql  # Init DB
+    networks:
+      - sketch-frenzy-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d sketchfrenzy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   sketch-frenzy-network:
@@ -71,3 +95,4 @@ networks:
 
 volumes:
   redis-data:
+  postgres-data:
