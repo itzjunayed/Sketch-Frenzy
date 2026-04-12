@@ -6,7 +6,6 @@ import {
 } from "lucide-react";
 import { useDrawingStore, COLORS } from "@/store/drawingStore";
 import { GAME_CONFIG } from "@/config/gameConfig";
-import type { DrawingTool } from "@/types/drawing";
 
 interface DrawingCanvasProps {
   socket: Socket | null;
@@ -1618,7 +1617,7 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
                       }}>
                         Players Joined ({players.length})
                       </div>
-                      {players.map((player, i) => (
+                      {players.map((player) => (
                         <div key={player.id} style={{
                           fontSize: '0.85rem',
                           padding: '6px 0',
