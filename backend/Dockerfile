@@ -9,6 +9,9 @@ COPY package*.json ./
 
 RUN npm ci && npm audit fix --force
 
+# Copy source code BEFORE building
+COPY . .
+
 RUN npm run build
 
 EXPOSE 5000
