@@ -431,10 +431,16 @@ async function handleLeave(socket: Socket): Promise<void> {
 }
 
 app.get("/health", (_, res) => {
+  const mem = process.memoryUsage();
   res.json({
     status: "ok",
     activeRooms: strokeBuffers.size,
     connectedSockets: io.sockets.sockets.size,
+    memory: {
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+      rssMB: Math.round(mem.rss / 1024 / 1024),
+    },
   });
 });
 
@@ -444,12 +450,22 @@ async function bootstrap(): Promise<void> {
   await connectRedis();
   await connectDB();
 
+  // Log memory usage at startup
+  const initMem = process.memoryUsage();
+  console.log(`📊 Init memory: heap ${Math.round(initMem.heapUsed / 1024 / 1024)}MB / ${Math.round(initMem.heapTotal / 1024 / 1024)}MB, rss ${Math.round(initMem.rss / 1024 / 1024)}MB`);
+
   const available = await getAvailableRoomsCount();
-  if (available < 50) {
-    await preCreateRooms(100);
+  if (available < 20) {
+    await preCreateRooms(25);
   } else {
     console.log(`✓ Room pool: ${available} available rooms`);
   }
+
+  // Log memory periodically
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    console.log(`📊 Memory: heap ${Math.round(mem.heapUsed / 1024 / 1024)}MB / ${Math.round(mem.heapTotal / 1024 / 1024)}MB, rooms: ${strokeBuffers.size}, sockets: ${io.sockets.sockets.size}`);
+  }, 30_000);
 
   // ── Idle-kick service ────────────────────────────────────────────────────────
   // Emit "kicked" to idle sockets WITHOUT disconnecting them.

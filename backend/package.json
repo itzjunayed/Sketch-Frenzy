@@ -4,9 +4,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon src/index.ts",
-    "start": "node dist/index.js",
-    "build": "npm install && tsc"
+    "dev": "NODE_OPTIONS='--max-old-space-size=512 --gc-interval=100' nodemon src/index.ts",
+    "start": "NODE_OPTIONS='--max-old-space-size=512 --gc-interval=100' node dist/index.js",
+    "build": "npm install && npm audit fix --force && tsc"
   },
   "keywords": [],
   "author": "",
