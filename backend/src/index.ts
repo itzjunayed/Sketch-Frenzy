@@ -24,12 +24,25 @@ import { GameService } from "./services/gameService";
 import { connectDB, upsertUser } from "./db/postgres";
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL || "*" }));
+// Strip any accidental trailing slash from the env var, then build an
+// allowlist that accepts both the raw value and the same URL without slash.
+// A single trailing-slash mismatch is enough for browsers to block the request.
+function getAllowedOrigins(): string | string[] {
+  const raw = process.env.FRONTEND_URL;
+  if (!raw) return "*";
+  const trimmed = raw.replace(/\/+$/, ""); // remove trailing slash(es)
+  // Allow both forms so copy-paste errors in the env var don't cause CORS failures
+  return [trimmed, `${trimmed}/`];
+}
+
+const ALLOWED_ORIGINS = getAllowedOrigins();
+
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json());
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: process.env.FRONTEND_URL || "*", methods: ["GET", "POST"] },
+  cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"], credentials: true },
 
   // ── Render / proxy-friendly timing ──────────────────────────────────────────
   // Render's infrastructure drops idle connections after ~30 s.
