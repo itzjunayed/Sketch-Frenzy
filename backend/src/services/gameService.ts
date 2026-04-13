@@ -473,6 +473,45 @@ export class GameService {
     // turnOrder is NOT mutated — nextDrawer() handles the skip
   }
 
+  /**
+   * Transfers all in-memory state from an old socket ID to a new one.
+   * Called when a player reconnects and gets a new socket ID so that
+   * their score, drawer status, and guess state are preserved.
+   */
+  transferPlayer(oldSid: string, newSid: string): void {
+    if (oldSid === newSid) return;
+
+    const info = this.playerInfos.get(oldSid);
+    if (info) {
+      this.playerInfos.set(newSid, { ...info, socketId: newSid });
+      this.playerInfos.delete(oldSid);
+    }
+
+    const score = this.scores.get(oldSid);
+    if (score !== undefined) {
+      this.scores.set(newSid, score);
+      this.scores.delete(oldSid);
+    }
+
+    const roundScore = this.roundScores.get(oldSid);
+    if (roundScore !== undefined) {
+      this.roundScores.set(newSid, roundScore);
+      this.roundScores.delete(oldSid);
+    }
+
+    if (this.guessedPlayers.has(oldSid)) {
+      this.guessedPlayers.add(newSid);
+      this.guessedPlayers.delete(oldSid);
+    }
+
+    if (this.currentDrawerId === oldSid) {
+      this.currentDrawerId = newSid;
+    }
+
+    // Patch the pre-built turn order so future turns still route correctly
+    this.turnOrder = this.turnOrder.map((sid) => (sid === oldSid ? newSid : sid));
+  }
+
   stop(): void { this.clearAllTimers(); }
 
   // ── Private helpers ───────────────────────────────────────────────────────────

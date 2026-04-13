@@ -559,7 +559,65 @@ const GAME_STYLES = `
   }
 
   .gf-size-wrap input[type=range] {
-    width: 80px; accent-color: var(--gold-dark);
+    -webkit-appearance: none;
+    appearance: none;
+    width: 90px;
+    height: 6px;
+    background: #e0d8c0;
+    border: 2px solid var(--ink);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* Webkit (Chrome, Safari, Edge) track */
+  .gf-size-wrap input[type=range]::-webkit-slider-runnable-track {
+    height: 6px;
+    background: #e0d8c0;
+    border-radius: 3px;
+  }
+
+  /* Webkit thumb */
+  .gf-size-wrap input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--gold);
+    border: 2.5px solid var(--ink);
+    box-shadow: 1px 1px 0 var(--ink);
+    cursor: pointer;
+    margin-top: -8px;
+    transition: background .12s, transform .12s;
+  }
+
+  .gf-size-wrap input[type=range]::-webkit-slider-thumb:hover {
+    background: var(--gold-dark);
+    transform: scale(1.15);
+  }
+
+  /* Firefox track */
+  .gf-size-wrap input[type=range]::-moz-range-track {
+    height: 6px;
+    background: #e0d8c0;
+    border: 2px solid var(--ink);
+    border-radius: 3px;
+  }
+
+  /* Firefox thumb */
+  .gf-size-wrap input[type=range]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--gold);
+    border: 2.5px solid var(--ink);
+    box-shadow: 1px 1px 0 var(--ink);
+    cursor: pointer;
+  }
+
+  .gf-size-wrap input[type=range]:disabled {
+    opacity: .4; cursor: not-allowed;
   }
 
   .gf-color-grid {
@@ -617,7 +675,7 @@ const GAME_STYLES = `
 
   .gf-msg.chat    { background: var(--cream); border: 1.5px solid #e0d8c0; }
   .gf-msg.system  { background: #f0f0f0; border: 1.5px solid #ccc; color: #555; font-style: italic; text-align: center; }
-  .gf-msg.correct { background: #d4f5e2; border: 1.5px solid var(--green); font-weight: 700; text-align: center; }
+  .gf-msg.correct { background: #d4f5e2; border: 1.5px solid var(--green); font-weight: 700; text-align: center; color: var(--ink); }
 
   .gf-msg-author { font-weight: 800; color: var(--blue); margin-right: 4px; }
   .gf-msg-text   { color: var(--ink); }
@@ -929,7 +987,132 @@ const GAME_STYLES = `
     color: #2a9a57;
     box-shadow: 2px 2px 0 #2a9a57;
   }
+
+  /* ── Canvas: prevent page scroll while drawing on touch ── */
+  .gf-canvas-touch { touch-action: none; }
+
+  /* ════════════════════════════════════════════════════════
+     RESPONSIVE — Tablet  (≤ 1080px)
+  ════════════════════════════════════════════════════════ */
+  @media (max-width: 1080px) {
+    .gf-root {
+      grid-template-columns: 190px 1fr 220px;
+    }
+    .gf-logo { font-size: 1.1rem; }
+    .gf-word-hint { font-size: 1rem; letter-spacing: 3px; }
+  }
+
+  /* ════════════════════════════════════════════════════════
+     RESPONSIVE — Mobile  (≤ 700px)
+     Stack: topbar → canvas+toolbar → chat
+     Players panel is hidden; count shown in topbar instead.
+  ════════════════════════════════════════════════════════ */
+  @media (max-width: 700px) {
+    /* Switch to single-column, 3-row stack */
+    .gf-root {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr auto;
+      /* svh = small viewport height, avoids iOS browser-bar overlap */
+      height: 100svh;
+      height: 100dvh;
+    }
+
+    /* Top bar — wrap on small screens */
+    .gf-topbar {
+      grid-column: 1;
+      padding: 6px 10px;
+      gap: 6px;
+      height: auto;
+      min-height: 46px;
+      flex-wrap: wrap;
+    }
+
+    .gf-logo { display: none; }
+
+    .gf-topbar-center {
+      flex: 1 1 100%;
+      order: 2;          /* push hint row below the icon row */
+      gap: 6px;
+    }
+
+    .gf-timer-wrap {
+      padding: 3px 10px;
+      box-shadow: 2px 2px 0 var(--ink);
+    }
+
+    .gf-timer-num { font-size: 1.2rem; min-width: 28px; }
+
+    .gf-word-wrap {
+      padding: 4px 10px;
+      box-shadow: 2px 2px 0 var(--ink);
+    }
+
+    .gf-word-hint { font-size: 0.95rem; letter-spacing: 3px; }
+
+    .gf-round-badge { font-size: 0.78rem; padding: 2px 7px; order: 1; }
+
+    .gf-conn { order: 1; }
+    .gf-conn span { display: none; }  /* hide "Connected" text, keep dot */
+
+    /* Hide players panel — count still visible in topbar */
+    .gf-players { display: none; }
+
+    /* Canvas panel takes the flexible middle row */
+    .gf-canvas-panel {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    /* Toolbar: single scrollable row instead of wrapping */
+    .gf-toolbar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 6px 10px;
+      gap: 6px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Color grid: single row */
+    .gf-color-grid { flex-wrap: nowrap; }
+
+    .gf-color-swatch { width: 26px; height: 26px; flex-shrink: 0; }
+
+    .gf-tool-btn { padding: 5px 9px; font-size: 0.8rem; flex-shrink: 0; }
+
+    .gf-size-wrap input[type=range] { width: 70px; }
+
+    /* Dividers become shorter on mobile */
+    .gf-divider-v { height: 22px; }
+
+    /* Chat: fixed height strip at the bottom */
+    .gf-chat {
+      grid-column: 1;
+      grid-row: 3;
+      border-left: none;
+      border-top: 3px solid var(--ink);
+      height: 200px;
+      flex-shrink: 0;
+    }
+
+    .gf-chat-input-wrap { padding: 6px; }
+    .gf-chat-send { width: 34px; height: 34px; }
+
+    /* Word selector / overlays: smaller text */
+    .gf-word-select-title { font-size: 1.3rem; }
+    .gf-word-choice-btn { font-size: 1rem; padding: 10px 12px; }
+    .gf-round-end-title { font-size: 1.4rem; }
+    .gf-game-end-title  { font-size: 1.5rem; }
+  }
 `;
+
+// ─── Fixed canvas resolution ──────────────────────────────────────────────────
+// All draw coordinates are in this logical space (0–CANVAS_RESOLUTION).
+// The canvas HTML element always has this resolution for its width/height
+// attributes; only the CSS display size changes per device. This guarantees
+// that a stroke drawn at (x=600, y=700) on a large monitor appears at
+// exactly the same position on a small phone screen.
+const CANVAS_RESOLUTION = 800;
 
 // ─── Hint helpers ─────────────────────────────────────────────────────────────
 
@@ -1066,29 +1249,25 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
     return () => ro.disconnect();
   }, []);
 
-  // ── Canvas init ─────────────────────────────────────────────────────────────
+  // ── Canvas init (runs once) ─────────────────────────────────────────────────
+  // The canvas resolution is fixed at CANVAS_RESOLUTION × CANVAS_RESOLUTION.
+  // CSS width/height (canvasSize) scales the display without changing the
+  // coordinate space, so all clients share the same 0–800 drawing grid.
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || canvasSize <= 0) return;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) return;
 
-    let imageData: ImageData | null = null;
-    if (contextRef.current && canvas.width > 0 && canvas.height > 0) {
-      try { imageData = contextRef.current.getImageData(0, 0, canvas.width, canvas.height); } catch (_) {}
-    }
-
-    canvas.width  = canvasSize;
-    canvas.height = canvasSize;
+    canvas.width  = CANVAS_RESOLUTION;
+    canvas.height = CANVAS_RESOLUTION;
     ctx.lineCap   = "round";
     ctx.lineJoin  = "round";
     ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(0, 0, canvasSize, canvasSize);
-
-    if (imageData) { try { ctx.putImageData(imageData, 0, 0); } catch (_) {} }
+    ctx.fillRect(0, 0, CANVAS_RESOLUTION, CANVAS_RESOLUTION);
 
     contextRef.current = ctx;
-  }, [canvasSize]);
+  }, []); // empty deps — run once only, resolution never changes
 
   // ── Drawing primitives ──────────────────────────────────────────────────────
   const paintSegment = useCallback(
@@ -1097,14 +1276,24 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
       const ctx = contextRef.current;
       if (!ctx) return;
       ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = type === "erase" ? "#FFFFFF" : segColor;
-      ctx.lineWidth   = segSize;
-      ctx.lineCap     = "round";
-      ctx.lineJoin    = "round";
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.stroke();
+      const drawColor = type === "erase" ? "#FFFFFF" : segColor;
+
+      if (from.x === to.x && from.y === to.y) {
+        // Single click — draw a filled circle so it's always visible
+        ctx.fillStyle = drawColor;
+        ctx.beginPath();
+        ctx.arc(from.x, from.y, segSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = drawColor;
+        ctx.lineWidth   = segSize;
+        ctx.lineCap     = "round";
+        ctx.lineJoin    = "round";
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+      }
     }, []
   );
 
@@ -1114,32 +1303,104 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
       const ctx    = contextRef.current;
       if (!canvas || !ctx) return;
 
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const { data, width, height } = imageData;
-      const sx = Math.round(startX), sy = Math.round(startY);
+      const { width, height } = canvas;
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data      = imageData.data;
+
+      const sx = Math.round(startX);
+      const sy = Math.round(startY);
       if (sx < 0 || sx >= width || sy < 0 || sy >= height) return;
 
+      // Sample the colour at the click point
       const pi = (sy * width + sx) * 4;
-      const [tR, tG, tB, tA] = [data[pi], data[pi+1], data[pi+2], data[pi+3]];
-      const fR = parseInt(fillColor.slice(1,3), 16);
-      const fG = parseInt(fillColor.slice(3,5), 16);
-      const fB = parseInt(fillColor.slice(5,7), 16);
-      if (tR===fR && tG===fG && tB===fB && tA===255) return;
+      const tR = data[pi], tG = data[pi + 1], tB = data[pi + 2], tA = data[pi + 3];
 
-      const visited = new Uint8Array(width * height);
-      const queue: number[] = [sx + sy * width];
-      while (queue.length) {
-        const flat = queue.pop()!;
-        if (visited[flat]) continue;
-        visited[flat] = 1;
-        const x = flat % width, y = (flat/width)|0, idx = flat*4;
-        if (data[idx]!==tR || data[idx+1]!==tG || data[idx+2]!==tB || data[idx+3]!==tA) continue;
-        data[idx]=fR; data[idx+1]=fG; data[idx+2]=fB; data[idx+3]=255;
-        if (x+1 < width)  queue.push(flat+1);
-        if (x-1 >= 0)     queue.push(flat-1);
-        if (y+1 < height) queue.push(flat+width);
-        if (y-1 >= 0)     queue.push(flat-width);
+      // Parse fill colour
+      const fR = parseInt(fillColor.slice(1, 3), 16);
+      const fG = parseInt(fillColor.slice(3, 5), 16);
+      const fB = parseInt(fillColor.slice(5, 7), 16);
+
+      // Already the fill colour — nothing to do
+      if (
+        Math.abs(tR - fR) < 5 &&
+        Math.abs(tG - fG) < 5 &&
+        Math.abs(tB - fB) < 5 &&
+        tA === 255
+      ) return;
+
+      // ── Tolerance-based colour match ─────────────────────────────────────
+      // Each channel of the sampled pixel must be within TOLERANCE of the
+      // target.  A value of 32 (matching Photoshop/Paint defaults) is enough
+      // to absorb anti-aliased edge pixels — the semi-transparent grey fringe
+      // that forms where a brush stroke meets the white canvas — without
+      // leaking through solid lines (which differ by ~200+ per channel).
+      const T = 32;
+      const matches = (idx: number) =>
+        Math.abs(data[idx]     - tR) <= T &&
+        Math.abs(data[idx + 1] - tG) <= T &&
+        Math.abs(data[idx + 2] - tB) <= T &&
+        Math.abs(data[idx + 3] - tA) <= T;
+
+      // ── Scanline span-fill ────────────────────────────────────────────────
+      // Processes pixels row-by-row (cache-friendly).  For each span it
+      // records a single entry point for the row above and below rather than
+      // enqueuing every pixel individually — ~10× faster than 4-connected BFS
+      // and produces a visually uniform fill with no depth-first "streaking".
+      const filled = new Uint8Array(width * height); // 0 = unfilled, 1 = filled
+
+      // Stack stores flat pixel indices
+      const stack: number[] = [sy * width + sx];
+
+      while (stack.length) {
+        let f = stack.pop()!;
+        const rowY = (f / width) | 0;
+        let   colX = f % width;
+
+        // Walk left to the beginning of this horizontal span
+        while (colX > 0 && matches((rowY * width + colX - 1) * 4) && !filled[rowY * width + colX - 1]) {
+          colX--;
+        }
+
+        // Walk right, filling each pixel and noting span entries above/below
+        let seedAbove = false;
+        let seedBelow = false;
+
+        while (colX < width) {
+          const flat = rowY * width + colX;
+          const idx  = flat * 4;
+          if (!matches(idx) || filled[flat]) break;
+
+          // Fill this pixel
+          filled[flat]  = 1;
+          data[idx]     = fR;
+          data[idx + 1] = fG;
+          data[idx + 2] = fB;
+          data[idx + 3] = 255;
+
+          // Row above
+          if (rowY > 0) {
+            const af = flat - width;
+            if (matches(af * 4) && !filled[af]) {
+              if (!seedAbove) { stack.push(af); seedAbove = true; }
+            } else {
+              seedAbove = false; // gap in span — reset so next continuous run gets its own seed
+            }
+          }
+
+          // Row below
+          if (rowY < height - 1) {
+            const bf = flat + width;
+            if (matches(bf * 4) && !filled[bf]) {
+              if (!seedBelow) { stack.push(bf); seedBelow = true; }
+            } else {
+              seedBelow = false;
+            }
+          }
+
+          colX++;
+        }
       }
+
       ctx.putImageData(imageData, 0, 0);
     }, []
   );
@@ -1203,6 +1464,8 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
   }, [socket, applyDrawEvent, replayHistory]);
 
   // ── Canvas coordinate helpers ───────────────────────────────────────────────
+
+  /** Convert a mouse event position → canvas logical coordinates (0–CANVAS_RESOLUTION) */
   const getCanvasPoint = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -1213,6 +1476,7 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
     };
   };
 
+  /** Convert a mouse event position → CSS display coordinates (for the cursor overlay) */
   const getCSSPoint = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -1220,10 +1484,21 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  // ── Mouse handlers ──────────────────────────────────────────────────────────
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  /** Convert a Touch → canvas logical coordinates (same scale as getCanvasPoint) */
+  const getTouchCanvasPoint = (touch: React.Touch) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (touch.clientX - rect.left) * (canvas.width  / rect.width),
+      y: (touch.clientY - rect.top ) * (canvas.height / rect.height),
+    };
+  };
+
+  // ── Shared drawing logic (used by both mouse and touch handlers) ────────────
+
+  const startStroke = (pt: { x: number; y: number }) => {
     if (!socket || !isDrawer) return;
-    const pt  = getCanvasPoint(e);
     const sid = `${socket.id}-${Date.now()}`;
 
     if (tool === "fill") {
@@ -1239,17 +1514,27 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
     strokeIdRef.current   = sid;
     myStrokeIdsRef.current.add(sid);
     setCanUndo(true);
+
+    // Dot on click/tap so single touches always leave a visible mark
+    const isErase  = tool === "eraser";
+    const segColor = isErase ? "#FFFFFF" : color;
+    const segSize  = isErase ? eraserSize : brushSize;
+    paintSegment(pt, pt, isErase ? "erase" : "stroke", segColor, segSize);
+    socket.emit("draw", {
+      type: isErase ? "erase" : "stroke",
+      startX: pt.x, startY: pt.y,
+      endX:   pt.x, endY:   pt.y,
+      color: segColor, size: segSize,
+      timestamp: Date.now(), clientId: socket.id,
+      strokeId: sid,
+    });
   };
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const css = getCSSPoint(e);
-    setCursorPos(css);
-
+  const continueStroke = (pt: { x: number; y: number }) => {
     if (!isDrawingRef.current || !socket || !lastPointRef.current || !isDrawer) return;
-    const pt      = getCanvasPoint(e);
-    const isErase = tool === "eraser";
-    const segColor= isErase ? "#FFFFFF" : color;
-    const segSize = isErase ? eraserSize : brushSize;
+    const isErase  = tool === "eraser";
+    const segColor = isErase ? "#FFFFFF" : color;
+    const segSize  = isErase ? eraserSize : brushSize;
 
     paintSegment(lastPointRef.current, pt, isErase ? "erase" : "stroke", segColor, segSize);
     socket.emit("draw", {
@@ -1274,8 +1559,32 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
     lastPointRef.current = null;
   };
 
+  // ── Mouse handlers ──────────────────────────────────────────────────────────
+  const handleMouseDown  = (e: React.MouseEvent<HTMLCanvasElement>) => startStroke(getCanvasPoint(e));
+  const handleMouseMove  = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    setCursorPos(getCSSPoint(e));
+    continueStroke(getCanvasPoint(e));
+  };
   const handleMouseUp    = endStroke;
   const handleMouseLeave = () => { setIsOnCanvas(false); setCursorPos(null); endStroke(); };
+
+  // ── Touch handlers (mobile drawing) ────────────────────────────────────────
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); // stop page scroll / zoom while drawing
+    const touch = e.touches[0];
+    if (touch) startStroke(getTouchCanvasPoint(touch));
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    if (touch) continueStroke(getTouchCanvasPoint(touch));
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    endStroke();
+  };
 
   // ── Toolbar actions ─────────────────────────────────────────────────────────
   const handleUndo = () => {
@@ -1400,7 +1709,7 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
 
           {roomCode && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              <div style={{
+              {/* <div style={{
                 background: 'var(--cream)',
                 border: '2.5px solid var(--ink)',
                 borderRadius: '8px',
@@ -1414,7 +1723,7 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
                 whiteSpace: 'nowrap',
               }}>
                 🔑 {roomCode}
-              </div>
+              </div> */}
               <button
                 className={`gf-copy-btn${copied ? ' copied' : ''}`}
                 onClick={copyRoomLink}
@@ -1482,6 +1791,10 @@ export function DrawingCanvas({ socket, roomCode }: DrawingCanvasProps) {
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseLeave}
                 onMouseEnter={() => setIsOnCanvas(true)}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                className="gf-canvas-touch"
                 style={{
                   display: "block",
                   width: canvasSize, height: canvasSize,

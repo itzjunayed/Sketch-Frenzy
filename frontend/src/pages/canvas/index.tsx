@@ -216,6 +216,7 @@ export function Canvas() {
     setWordChoices, setIsSelectingWord, setWordSelectTimeLeft,
     setRoundScoreDelta, setHostId, setMaxPlayers,
     setUsername, username,
+    resetGameState,
   } = useDrawingStore();
 
   const [joinPhase, setJoinPhase]     = useState<JoinPhase>("connecting");
@@ -226,6 +227,28 @@ export function Canvas() {
   // Persists across socket reconnects within the same browser session.
   // Once true we skip the modal and auto-rejoin on reconnect.
   const hasJoinedRef = useRef(false);
+
+  // Stable ref so the unmount cleanup can always reach the current socket
+  // even if it changed since the effect last ran.
+  const socketRef = useRef<typeof socket>(null);
+  useEffect(() => { socketRef.current = socket; }, [socket]);
+
+  // ── Reset game state + leave room on navigation ────────────────────────────
+  // On mount: wipe any leftover state from a previous room so the new room
+  // always starts in a clean "waiting" phase with no stale players/chat/hints.
+  // On unmount: tell the server we're intentionally leaving so it can clean
+  // up the player list and, if needed, transfer host to someone else.
+  useEffect(() => {
+    resetGameState();
+
+    return () => {
+      // Emit leaveRoom regardless of whether we're disconnecting or just
+      // navigating away — the server will handle the cleanup gracefully.
+      socketRef.current?.emit("leaveRoom");
+      hasJoinedRef.current = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomCode]); // re-run whenever the room changes (covers room-to-room navigation)
 
   // ── Validate roomCode ──────────────────────────────────────────────────────
   useEffect(() => { if (!roomCode) navigate("/"); }, [roomCode, navigate]);
