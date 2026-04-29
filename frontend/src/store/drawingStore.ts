@@ -21,14 +21,14 @@ export interface DrawingStateStore {
   isConnected: boolean;
   socketId: string | null;
   username: string;
-  hostId: string | null;  // Room host socket ID
+  hostId: string | null;
 
   // ── Game core ──────────────────────────────────────────────────────────────
   players: Player[];
   chatMessages: ChatMessage[];
   wordHint: string;
-  wordLengths: number[];          // e.g. [4, 4] for "Fire Ball"
-  currentWord: string | null;     // only set for the active drawer
+  wordLengths: number[];
+  currentWord: string | null;
   timeLeft: number;
   isDrawer: boolean;
   currentDrawerId: string | null;
@@ -36,17 +36,16 @@ export interface DrawingStateStore {
   gamePhase: GamePhase;
   roundNumber: number;
   maxRounds: number;
-  hasGuessedCorrectly: boolean;  maxPlayers: number;             // maximum players in current room
+  hasGuessedCorrectly: boolean;
+  maxPlayers: number;
+
   // ── Word selection (drawer only) ───────────────────────────────────────────
-  wordChoices: string[];          // options presented to the drawer
-  isSelectingWord: boolean;       // true while drawer hasn't picked yet
-  wordSelectTimeLeft: number;     // countdown shown on the selector
+  wordChoices: string[];
+  isSelectingWord: boolean;
+  wordSelectTimeLeft: number;
 
   // ── Round-end overlay ──────────────────────────────────────────────────────
-  roundScoreDelta: ScoreDelta[];  // points gained this round per player
-
-  // ── Room errors ────────────────────────────────────────────────────────────
-  roomError: string | null;       // error message when joining a room fails
+  roundScoreDelta: ScoreDelta[];
 
   // ── Setters ────────────────────────────────────────────────────────────────
   setTool: (tool: DrawingTool) => void;
@@ -77,7 +76,14 @@ export interface DrawingStateStore {
   setIsSelectingWord: (val: boolean) => void;
   setWordSelectTimeLeft: (t: number) => void;
   setRoundScoreDelta: (deltas: ScoreDelta[]) => void;
-  setRoomError: (error: string | null) => void;
+
+  /**
+   * Resets all game state back to the "waiting for players" defaults.
+   * Called when entering a new room so stale state from a previous room
+   * (phase, scores, hints, chat) never bleeds into the new one.
+   * Preserves: username, tool, color, brushSize, eraserSize, isConnected, socketId.
+   */
+  resetGameState: () => void;
 }
 
 export const useDrawingStore = create<DrawingStateStore>((set) => ({
@@ -142,5 +148,30 @@ export const useDrawingStore = create<DrawingStateStore>((set) => ({
   setIsSelectingWord: (val) => set({ isSelectingWord: val }),
   setWordSelectTimeLeft: (t) => set({ wordSelectTimeLeft: t }),
   setRoundScoreDelta: (deltas) => set({ roundScoreDelta: deltas }),
-  setRoomError: (error) => set({ roomError: error }),
+
+  resetGameState: () =>
+    set({
+      // Clear all game-specific state so a new room always starts fresh
+      players: [],
+      chatMessages: [],
+      wordHint: "",
+      wordLengths: [],
+      currentWord: null,
+      timeLeft: 0,
+      isDrawer: false,
+      currentDrawerId: null,
+      currentDrawerName: "",
+      gamePhase: "waiting",
+      roundNumber: 0,
+      maxRounds: 3,
+      hasGuessedCorrectly: false,
+      maxPlayers: 8,
+      wordChoices: [],
+      isSelectingWord: false,
+      wordSelectTimeLeft: 0,
+      roundScoreDelta: [],
+      hostId: null,
+      connectedClients: 0,
+      // username, tool, color, brushSize, eraserSize, socketId, isConnected are kept
+    }),
 }));

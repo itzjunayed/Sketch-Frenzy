@@ -1,13 +1,19 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci && npm audit fix --force
 
+# Copy source code BEFORE building
 COPY . .
 
-EXPOSE 3001
+RUN npm run build
 
-CMD ["npm", "run", "dev"]
+EXPOSE 5000
+
+CMD ["npm", "start"]

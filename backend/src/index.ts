@@ -24,12 +24,45 @@ import { GameService } from "./services/gameService";
 import { connectDB, upsertUser } from "./db/postgres";
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL || "*" }));
+// Strip any accidental trailing slash from the env var, then build an
+// allowlist that accepts both the raw value and the same URL without slash.
+// A single trailing-slash mismatch is enough for browsers to block the request.
+function getAllowedOrigins(): string | string[] {
+  const raw = process.env.FRONTEND_URL;
+  if (!raw) return "*";
+  const trimmed = raw.replace(/\/+$/, ""); // remove trailing slash(es)
+  // Allow both forms so copy-paste errors in the env var don't cause CORS failures
+  return [trimmed, `${trimmed}/`];
+}
+
+const ALLOWED_ORIGINS = getAllowedOrigins();
+
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json());
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: process.env.FRONTEND_URL || "*", methods: ["GET", "POST"] },
+  cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"], credentials: true },
+
+  // ── Render / proxy-friendly timing ──────────────────────────────────────────
+  // Render's infrastructure drops idle connections after ~30 s.
+  // pingInterval (25 s) keeps the connection alive; pingTimeout gives the
+  // client 60 s to respond before the server declares it dead.
+  pingInterval: 25000,
+  pingTimeout: 60000,
+  // Allow enough time for the HTTP→WebSocket upgrade through Render's proxy.
+  upgradeTimeout: 30000,
+  // connectTimeout gives slow mobile clients time to complete the handshake.
+  connectTimeout: 45000,
+
+  // ── Connection-state recovery ────────────────────────────────────────────────
+  // If a client reconnects within 2 minutes, Socket.IO will restore its
+  // previous socket ID, room membership, and buffered events — so the user
+  // never gets a new socket ID and never loses their in-game state.
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+    skipMiddlewares: true,
+  },
 });
 
 const strokeBuffers = new Map<string, any[]>();
@@ -106,16 +139,86 @@ io.on("connection", async (socket: Socket) => {
 
   if (userId) socketToUID.set(socket.id, userId);
 
+  // ── Session recovery on reconnect ──────────────────────────────────────────
+  // When connectionStateRecovery successfully restores the socket, the socket
+  // already has its rooms. We just need to make sure our in-memory maps are
+  // up-to-date (they survive reconnects since they're process-scoped).
+  if ((socket as any).recovered) {
+    console.log(`[↩] ${socket.id} recovered session (userId=${userId ?? "anon"})`);
+    // Maps are still valid — nothing extra needed.
+  } else {
+    // New connection or recovery failed — check if this userId was in a room
+    // and attempt soft restoration so the user can re-join cleanly.
+    if (userId) {
+      const r = getRedisClient();
+      if (r) {
+        // Look for any room this userId was registered in
+        try {
+          const keys = await r.keys(`sock:*:${userId}`);
+          for (const key of keys) {
+            const parts = key.split(":");
+            // key format: sock:{roomCode}:{userId}
+            if (parts.length >= 3) {
+              const roomCode = parts.slice(1, -1).join(":");
+              await r.set(key, socket.id, { EX: 86400 });
+              // Update in-memory maps if the room still exists
+              const room = await getRoom(roomCode);
+              if (room && room.status === "active") {
+                const existingPlayer = room.players.find(
+                  (p) => socketToUID.get(p.socketId) === userId
+                );
+                if (existingPlayer) {
+                  // Transfer the old socketId entry to the new one
+                  const oldSid = existingPlayer.socketId;
+                  const username = existingPlayer.username;
+                  const gs = gameServices.get(roomCode);
+                  if (gs) gs.transferPlayer(oldSid, socket.id);
+                  // Update room model
+                  existingPlayer.socketId = socket.id;
+                  await saveRoom(room);
+                  // Update in-memory maps
+                  socketToRoom.set(socket.id, roomCode);
+                  socketToName.set(socket.id, username);
+                  if (oldSid !== socket.id) {
+                    socketToRoom.delete(oldSid);
+                    socketToName.delete(oldSid);
+                  }
+                  // Re-join socket.io room
+                  socket.join(roomCode);
+                  console.log(`[↩] ${socket.id} soft-restored to room ${roomCode} as "${username}"`);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Session restoration error:", err);
+        }
+      }
+    }
+
+    console.log(`[+] ${socket.id} connected (userId=${userId ?? "anon"})`);
+  }
+
   connectDB().then(async (db) => {
     if (db && userId) {
       await upsertUser(db, userId, fingerprint ?? "", ip).catch(() => {});
     }
   });
 
-  console.log(`[+] ${socket.id} connected (userId=${userId ?? "anon"})`);
-
   socket.on("createRoom", async (opts: any, callback: (r: any) => void) => {
     try {
+      // ── Leave any existing room first ──────────────────────────────────────
+      // This handles two cases:
+      //   1. User navigated back to the home page without the Canvas unmount
+      //      emitting "leaveRoom" (e.g. hard refresh or browser back button).
+      //   2. Session restoration (on reconnect) put the socket back into the
+      //      old room, and the user now wants to create a brand-new one.
+      // Calling handleLeave here ensures the socket leaves the old Socket.IO
+      // room, the old player list is updated, and socketToRoom is cleared —
+      // so the new room always starts with a completely clean slate.
+      if (socketToRoom.has(socket.id)) {
+        await handleLeave(socket);
+      }
       const { maxPlayers, rounds, roundTime, username } = opts ?? {};
       const name = String(username ?? "").trim().slice(0, 8) || "Host";
 
@@ -388,15 +491,39 @@ io.on("connection", async (socket: Socket) => {
     await handleLeave(socket);
   });
 
-  socket.on("disconnect", async () => {
-    console.log(`[-] ${socket.id} disconnected`);
-    await handleLeave(socket);
+  socket.on("disconnect", async (reason) => {
+    console.log(`[-] ${socket.id} disconnected (reason: ${reason})`);
+    // Only fully remove the player if this is a genuine leave, not a
+    // transient network drop. connectionStateRecovery handles restoring
+    // the session if the client reconnects within maxDisconnectionDuration.
+    // For transport-level drops, delay cleanup to give recovery a chance.
+    const isTransportDrop =
+      reason === "transport close" ||
+      reason === "transport error" ||
+      reason === "ping timeout";
+
+    if (isTransportDrop) {
+      // Give the client 10 s to reconnect before cleaning up
+      setTimeout(async () => {
+        // Check if the socket reconnected (it will have a new entry if recovered)
+        const stillGone = !io.sockets.sockets.has(socket.id);
+        if (stillGone) {
+          await handleLeave(socket);
+        }
+      }, 10000);
+    } else {
+      await handleLeave(socket);
+    }
   });
 });
 
 async function handleLeave(socket: Socket): Promise<void> {
   const roomCode = socketToRoom.get(socket.id);
   if (!roomCode) return;
+
+  // Leave the Socket.IO room immediately so the socket stops receiving
+  // any further events (draw, timerUpdate, gamePhase, etc.) from it.
+  socket.leave(roomCode);
 
   socketToRoom.delete(socket.id);
   socketToName.delete(socket.id);
@@ -431,10 +558,16 @@ async function handleLeave(socket: Socket): Promise<void> {
 }
 
 app.get("/health", (_, res) => {
+  const mem = process.memoryUsage();
   res.json({
     status: "ok",
     activeRooms: strokeBuffers.size,
     connectedSockets: io.sockets.sockets.size,
+    memory: {
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+      rssMB: Math.round(mem.rss / 1024 / 1024),
+    },
   });
 });
 
@@ -444,17 +577,21 @@ async function bootstrap(): Promise<void> {
   await connectRedis();
   await connectDB();
 
+  const initMem = process.memoryUsage();
+  console.log(`📊 Init memory: heap ${Math.round(initMem.heapUsed / 1024 / 1024)}MB / ${Math.round(initMem.heapTotal / 1024 / 1024)}MB, rss ${Math.round(initMem.rss / 1024 / 1024)}MB`);
+
   const available = await getAvailableRoomsCount();
-  if (available < 50) {
-    await preCreateRooms(100);
+  if (available < 20) {
+    await preCreateRooms(25);
   } else {
     console.log(`✓ Room pool: ${available} available rooms`);
   }
 
-  // ── Idle-kick service ────────────────────────────────────────────────────────
-  // Emit "kicked" to idle sockets WITHOUT disconnecting them.
-  // Keeping the socket alive means the home page sees it as connected
-  // immediately — no "🔌 Connecting…" flash on the button.
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    console.log(`📊 Memory: heap ${Math.round(mem.heapUsed / 1024 / 1024)}MB / ${Math.round(mem.heapTotal / 1024 / 1024)}MB, rooms: ${strokeBuffers.size}, sockets: ${io.sockets.sockets.size}`);
+  }, 30_000);
+
   startIdleCheckService(30_000, async (code, idleSockets, newHostId) => {
     const gs = gameServices.get(code);
 
@@ -462,10 +599,9 @@ async function bootstrap(): Promise<void> {
       const sock = io.sockets.sockets.get(sid);
       if (sock) {
         sock.emit("kicked", { reason: "idle" });
-        sock.leave(code); // leave the Socket.io room but stay connected
+        sock.leave(code);
       }
 
-      // Clean up server-side maps
       socketToRoom.delete(sid);
       socketToName.delete(sid);
       const uid = socketToUID.get(sid);
@@ -474,14 +610,12 @@ async function bootstrap(): Promise<void> {
         socketToUID.delete(sid);
       }
 
-      // If the kicked player was drawing, end the round
       if (gs?.isCurrentDrawer(sid) && gs.getPhase() === "drawing") {
         gs.endRound("idle_kick");
       }
       gs?.removePlayer(sid);
     }
 
-    // Notify remaining players
     const room = await getRoom(code);
     if (!room || room.players.length === 0) {
       gs?.stop();
@@ -501,8 +635,8 @@ async function bootstrap(): Promise<void> {
 
   startCleanupService(60_000);
 
-  httpServer.listen(PORT, () => {
-    console.log(`✓ Server listening on http://localhost:${PORT}`);
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`✓ Server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

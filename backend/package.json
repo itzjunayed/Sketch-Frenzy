@@ -5,6 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon src/index.ts",
+    "start": "NODE_OPTIONS='--max-old-space-size=512' node dist/index.js",
     "build": "tsc"
   },
   "keywords": [],
@@ -20,6 +21,7 @@
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.5",
     "@types/pg": "^8.20.0",

@@ -46,8 +46,8 @@ export type RoomIdleCheckCallback = (
 // Redis clean-up of genuinely ghost sockets.
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
-const TARGET_AVAILABLE_ROOMS = 100;
-const AUTO_CREATE_COUNT = 100;
+const TARGET_AVAILABLE_ROOMS = 25;
+const AUTO_CREATE_COUNT = 25;
 
 const ROOM_KEY_PREFIX = "room:";
 const AVAILABLE_ROOMS_KEY = "available_rooms";
